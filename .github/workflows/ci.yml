@@ -1,0 +1,323 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  DOCKER_REGISTRY: docker.io
+  IMAGE_NAME: chess-platform
+
+jobs:
+  # =============================================
+  # Job 1: Lint
+  # =============================================
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Prettier check
+        run: npx prettier --check "src/**/*.ts"
+
+      - name: Check TypeScript compilation
+        run: npx tsc --noEmit
+
+  # =============================================
+  # Job 2: Test
+  # =============================================
+  test:
+    name: Run Tests & Coverage
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: chess_test
+          POSTGRES_PASSWORD: chess_test
+          POSTGRES_DB: chess_platform_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq:3.12-alpine
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q status"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5672:5672
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for services
+        run: |
+          npx wait-on tcp:localhost:5432 --timeout 30000
+          npx wait-on tcp:localhost:6379 --timeout 30000
+          npx wait-on tcp:localhost:5672 --timeout 30000
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgres://chess_test:chess_test@localhost:5432/chess_platform_test
+        run: npm run migrate:up
+
+      - name: Run tests with coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://chess_test:chess_test@localhost:5432/chess_platform_test
+          REDIS_URL: redis://localhost:6379
+          RABBITMQ_URL: amqp://localhost:5672
+        run: npm run test:cov
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            junit.xml
+
+  # =============================================
+  # Job 3: Build
+  # =============================================
+  build:
+    name: Build Application
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # =============================================
+  # Job 4: Docker Build & Push
+  # =============================================
+  docker:
+    name: Build & Push Docker Image
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+            type=sha,prefix=,suffix=,format=short
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Export digest
+        run: |
+          echo "Image digest: ${{ steps.build-push.outputs.digest }}"
+
+  # =============================================
+  # Job 5: Security Scan with Trivy
+  # =============================================
+  security-scan:
+    name: Security Vulnerability Scan
+    needs: [docker]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Pull image for scanning
+        run: docker pull ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Run Trivy vulnerability scanner (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          ignore-unfixed: true
+
+      - name: Run Trivy vulnerability scanner (Table)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          ignore-unfixed: true
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-container-scan'
+
+      - name: Upload Trivy report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-results.sarif
+
+  # =============================================
+  # Job 6: Deploy to Staging (develop branch)
+  # =============================================
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [docker]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: https://staging.chess-platform.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging server
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          echo "$STAGING_SSH_KEY" > staging_key.pem
+          chmod 600 staging_key.pem
+          ssh -i staging_key.pem -o StrictHostKeyChecking=no \
+            $STAGING_USER@$STAGING_HOST \
+            "cd /opt/chess-platform && docker compose -f docker/docker-compose.staging.yml pull app && docker compose -f docker/docker-compose.staging.yml up -d"
+          rm -f staging_key.pem
+
+  # =============================================
+  # Job 7: Deploy to Production (main branch)
+  # =============================================
+  deploy-production:
+    name: Deploy to Production
+    needs: [docker, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://chess-platform.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to production server
+        env:
+          PROD_HOST: ${{ secrets.PROD_HOST }}
+          PROD_USER: ${{ secrets.PROD_USER }}
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          echo "$PROD_SSH_KEY" > prod_key.pem
+          chmod 600 prod_key.pem
+          ssh -i prod_key.pem -o StrictHostKeyChecking=no \
+            $PROD_USER@$PROD_HOST \
+            "cd /opt/chess-platform && docker compose -f docker/docker-compose.prod.yml pull app && docker compose -f docker/docker-compose.prod.yml up -d"
+          rm -f prod_key.pem
