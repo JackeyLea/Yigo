@@ -1,0 +1,123 @@
+// main.js — 启动/输入/主循环
+(function () {
+  window.__errs = [];
+  window.addEventListener("error", function (ev) {
+    window.__errs.push(ev.message + " @" + (ev.filename || "") + ":" + (ev.lineno || 0));
+  });
+  var canvas = document.getElementById("screen");
+  var game = new Game(canvas);
+  window.__game = game;
+
+  // 尺寸自适应(整数缩放)
+  function resize() {
+    var scale = Math.max(1, Math.floor(Math.min(window.innerWidth / 256, (window.innerHeight - 60) / 240)));
+    canvas.style.width = 256 * scale + "px";
+    canvas.style.height = 240 * scale + "px";
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // 输入映射(与原版习惯一致: 方向+A跳+B跑/火)
+  var keys = {
+    ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+    KeyA: "left", KeyD: "right", KeyW: "up", KeyS: "down",
+    KeyZ: "jump", Space: "jump", KeyK: "jump",
+    KeyX: "run", KeyJ: "run", ShiftLeft: "run", ShiftRight: "run",
+    Enter: "start", Escape: "start",
+  };
+  window.addEventListener("keydown", function (ev) {
+    if (ev.code === "KeyM") {
+      AudioSys.enabled = !AudioSys.enabled;
+      if (!AudioSys.enabled) AudioSys.stopMusic();
+      else game.playAreaMusic && game.level && game.playAreaMusic();
+      ev.preventDefault();
+      return;
+    }
+    var k = keys[ev.code];
+    if (k) {
+      game.input[k] = true;
+      AudioSys.unlock();
+      ev.preventDefault();
+    }
+  });
+  window.addEventListener("keyup", function (ev) {
+    var k = keys[ev.code];
+    if (k) { game.input[k] = false; ev.preventDefault(); }
+  });
+
+  // 资源加载
+  game.loadImages(function () {
+    AudioSys.loadAll(null, function (failed) {
+      if (failed) console.warn("audio files failed:", failed);
+    });
+
+    // ---- 测试模式: ?t=1&w=世界&a=关卡&f=帧数&in=输入脚本&x=初始x ----
+    var q = new URLSearchParams(location.search);
+    if (q.get("t")) {
+      game.world = +(q.get("w") || 0);
+      game.area = +(q.get("a") || 0);
+      game.lives = 3;
+      var script = q.get("in") || "";
+      game.loadArea(game.world, game.area, {});
+      if (q.get("x")) { game.player.x = +q.get("x"); game.scrollX = Math.max(0, game.player.x - 80); }
+      var frames = +(q.get("f") || 300);
+      var err = null;
+      var trail = [];
+      for (var i = 0; i < frames; i++) {
+        // 脚本: r=右 l=左 j=跳(周期) s=跑 u=上 d=下
+        game.input.right = script.indexOf("r") >= 0;
+        game.input.left = script.indexOf("l") >= 0;
+        game.input.run = script.indexOf("s") >= 0;
+        game.input.down = script.indexOf("d") >= 0;
+        game.input.jump = script.indexOf("j") >= 0 && (i % 40) < 20;
+        try { game.update(); } catch (e) { err = e.message + " @" + (e.stack || "").split("\n")[1]; break; }
+        if (i % 40 === 0) trail.push(i + ":" + Math.round(game.player.py) + "/" + Math.round(game.player.x) + (game.player.onGround ? "G" : "g"));
+      }
+      try { game.render(); } catch (e) { err = "render: " + e.message; }
+      var p = game.player;
+      var info = "T " + (game.world+1) + "-" + (game.area+1) + " s=" + game.state + " x=" + Math.round(p.x) + " y=" + Math.round(p.py) +
+        " sc=" + Math.round(game.scrollX) + " t=" + game.time + " st=" + p.status +
+        " en=" + game.enemies.length + " g=" + p.onGround + " E:" + err;
+      var ed = [];
+      for (var ei = 0; ei < game.enemies.length && ei < 4; ei++) {
+        var e = game.enemies[ei];
+        ed.push(e.kind.charAt(0) + Math.round(e.x) + "/" + Math.round(e.py) + (e.alive ? "" : "X"));
+      }
+      document.title = info;
+      drawText(game.ctx, info.substring(0, 60), 4, 226);
+      drawText(game.ctx, ("EN: " + ed.join(" ")).substring(0, 58), 4, 218);
+      drawText(game.ctx, trail.join(" ").substring(0, 58), 4, 234);
+      return; // 不进入正常循环
+    }
+
+    // 固定 60fps 步进(setInterval 驱动, 不受标签页 rAF 节流影响)
+    var acc = 0, last = performance.now();
+    function tick() {
+      var now = performance.now();
+      acc += now - last;
+      last = now;
+      var steps = 0;
+      while (acc >= 1000 / 60 && steps < 6) {
+        try {
+          game.update();
+        } catch (e) {
+          window.__errs.push("update: " + e.message + " " + (e.stack || "").split("\n")[1]);
+          acc = 0; break;
+        }
+        acc -= 1000 / 60;
+        steps++;
+      }
+      if (steps === 6) acc = 0;
+      try {
+        game.render();
+      } catch (e) {
+        window.__errs.push("render: " + e.message + " " + (e.stack || "").split("\n")[1]);
+        window.__errs.push("STOPPED");
+      }
+      if (window.__errs.some(function (x) { return x === "STOPPED"; })) {
+        clearInterval(handle);
+      }
+    }
+    var handle = setInterval(tick, 4);
+  });
+})();

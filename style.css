@@ -1,0 +1,24 @@
+html, body {
+  margin: 0; padding: 0;
+  background: #101018;
+  color: #ddd;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  height: 100%;
+}
+#wrap {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100vh; gap: 10px;
+}
+#screen {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: #000;
+  outline: 2px solid #333;
+}
+#hint {
+  font-size: 13px; color: #888;
+  display: flex; flex-wrap: wrap; gap: 14px; justify-content: center;
+  max-width: 780px;
+}
+#hint b { color: #bbb; }

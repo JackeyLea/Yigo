@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>关卡解码测试</title>
+<style>body{background:#222;color:#ccc;font-family:monospace}canvas{image-rendering:pixelated;background:#5c94fc}</style>
+</head>
+<body>
+<div id="info"></div>
+<canvas id="screen" width="256" height="240"></canvas>
+<div>←→ 翻页, 1-8 选世界, Q/W/E/R 选 1-4 关</div>
+<script src="js/leveldata.js"></script>
+<script src="js/leveltables.js"></script>
+<script src="js/font.js"></script>
+<script src="js/tiles.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/level.js"></script>
+<script>
+(function () {
+  var world = 0, area = 0, page = 0;
+  var canvas = document.getElementById("screen");
+  var ctx = canvas.getContext("2d");
+  var tilesImg = new Image();
+  tilesImg.src = SHEET.tiles.src;
+  var level = null;
+
+  function decode() {
+    try {
+    window.__trace61 = true;
+    level = decodeLevel(world, area, 0);
+    level._areaNumber = area;
+    page = 0;
+    var info = document.getElementById("info");
+    var counts = {};
+    for (var i = 0; i < level.map.length; i++) {
+      var m = level.map[i];
+      if (m) counts[m] = (counts[m] || 0) + 1;
+    }
+    var ks = Object.keys(counts).map(function (k) {
+      return "0x" + (+k).toString(16) + ":" + counts[k];
+    }).join(" ");
+    var txt = "W" + (world + 1) + "-" + (area + 1) +
+      " T" + level.areaType + "s" + level.style +
+      " w" + level.widthUsed + " e" + level.enemies.length +
+      " dbg:" + (window.__dbg || "-") + " " + ks;
+    info.textContent = txt;
+    document.title = txt;
+    } catch (err) {
+      document.title = "ERR: " + err.message + " @" + (err.stack||"").split("\n")[1];
+    }
+  }
+
+  var frame = 0;
+  function render() {
+    if (!level) return;
+    frame++;
+    // 天空底色
+    var bg = "#5c94fc";
+    if (level.areaType === 2) bg = "#000";
+    if (level.areaType === 0) bg = level.style === 0 ? "#5c94fc" : "#5c94fc";
+    if (level.style === 1) bg = "#000";
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 256, 240);
+
+    var scrollX = page * 256;
+    // HUD
+    drawText(ctx, "TEST VIEW", 8, 8);
+    drawText(ctx, "P" + page + "/" + ((level.widthUsed >> 4) | 0), 8, 16);
+
+    var qFrame = Q_FRAMES[(frame >> 4) % 4];
+    var cFrame = COIN_FRAMES[(frame >> 4) % 4];
+    for (var screenCol = 0; screenCol < 17; screenCol++) {
+      var col = scrollX / 16 + screenCol | 0;
+      for (var row = 0; row < 13; row++) {
+        var mt = level.at(col, row);
+        if (!mt) continue;
+        var art = null;
+        if (mt === 0xc0 || mt === 0xc1) art = qFrame;
+        else if (mt === 0xc2 || mt === 0xc3) art = cFrame;
+        drawMetatile(ctx, tilesImg, mt, Math.round(screenCol * 16 - (scrollX % 16)), row * 16 + 32, art);
+      }
+    }
+    // 敌人标记(红框)
+    ctx.strokeStyle = "#f00";
+    for (var i = 0; i < level.enemies.length; i++) {
+      var e = level.enemies[i];
+      var sx = e.x - scrollX;
+      if (sx < -16 || sx > 260) continue;
+      ctx.strokeRect(sx, e.y + 32, 16, 16);
+      ctx.fillStyle = "#f00";
+      ctx.fillRect(sx, e.y + 32, 3, 3);
+    }
+    requestAnimationFrame(render);
+  }
+
+  window.addEventListener("keydown", function (ev) {
+    if (ev.key === "ArrowRight") page++;
+    if (ev.key === "ArrowLeft" && page > 0) page--;
+    if (ev.key >= "1" && ev.key <= "8") { world = +ev.key - 1; decode(); }
+    var m = { q: 0, w: 1, e: 2, r: 3 }[ev.key];
+    if (m !== undefined) { area = m; decode(); }
+  });
+
+  window.__getLevel = function(){ return level; };
+  tilesImg.onload = function () { decode(); render(); };
+})();
+</script>
+</body>
+</html>
