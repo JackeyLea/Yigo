@@ -387,7 +387,6 @@ Game.prototype.spawnCoinPop = function (col, row) {
   var pt = new Particle(this, "coin", col * 16, row * 16 - 16);
   pt.ys = -5;
   this.particles.push(pt);
-  this.addScore(200, col * 16, row * 16 - 24);
   AudioSys.playSfx("sfx_coin");
 };
 
@@ -886,6 +885,13 @@ Game.prototype.updateTitle = function (inp, pin) {
 
 Game.prototype.updatePlaying = function (inp, pin) {
   var p = this.player;
+  // Start 暂停(原版行为)
+  if (inp.start && !pin.start) {
+    this.paused = !this.paused;
+    AudioSys.stopMusic();
+    if (!this.paused) this.playAreaMusic();
+  }
+  if (this.paused) { return; }
   // 计时
   this.timeFrames++;
   if (this.timeFrames >= 24) {
@@ -1092,6 +1098,7 @@ Game.prototype.render = function () {
   this.drawPlayer(ctx);
 
   this.renderHUD(ctx);
+  if (this.paused) drawText(ctx, "PAUSE", 112, 120);
   if (L.scrollZoneCol !== undefined && L.warpZone) this.drawWarpZone(ctx);
 };
 

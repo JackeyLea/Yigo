@@ -38,9 +38,6 @@ Level.prototype.at = function (col, row) {
 };
 Level.prototype.set = function (col, row, mt) {
   if (col < 0 || row < 0 || row >= LEVEL_ROWS) return;
-  if (window.__trace61 && mt === 0x61 && col < 30) {
-    (window.__t61 = window.__t61 || []).push(col + "," + row + " :: " + (new Error().stack.split("\n").slice(1,3).join(" | ")));
-  }
   while (col >= this.width) this.grow();
   this.map[row * this.width + col] = mt;
 };
@@ -181,7 +178,6 @@ function decodeAreaObjects(L, data, worldNumber) {
     if (!isPageCtrl && e.page > maxPage) maxPage = e.page;
   }
   var totalCols = (maxPage + 2) * 16;
-  window.__stream = stream;
   window.__dbg = "objs" + stream.length + " maxp" + maxPage + " len" + data.length + " " + (window.__ptr||"");
 
   // 活动对象状态(带长度计数)
