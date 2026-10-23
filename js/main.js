@@ -63,13 +63,22 @@
       var frames = +(q.get("f") || 300);
       var err = null;
       var trail = [];
+      // 定时事件: in=rj;j@120;j@200 → 在指定帧按跳(15帧)
+      var jumps = [];
+      var base = script.replace(/j@(\d+)/g, function (m, n) { jumps.push(+n); return ""; });
+      if (q.get("big")) game.player.status = 1;
+      if (q.get("fire")) game.player.status = 2;
       for (var i = 0; i < frames; i++) {
         // 脚本: r=右 l=左 j=跳(周期) s=跑 u=上 d=下
-        game.input.right = script.indexOf("r") >= 0;
-        game.input.left = script.indexOf("l") >= 0;
-        game.input.run = script.indexOf("s") >= 0;
-        game.input.down = script.indexOf("d") >= 0;
-        game.input.jump = script.indexOf("j") >= 0 && (i % 40) < 20;
+        game.input.right = base.indexOf("r") >= 0;
+        game.input.left = base.indexOf("l") >= 0;
+        game.input.run = base.indexOf("s") >= 0;
+        game.input.down = base.indexOf("d") >= 0;
+        var timedJump = false;
+        for (var ji = 0; ji < jumps.length; ji++) {
+          if (i >= jumps[ji] && i < jumps[ji] + 15) timedJump = true;
+        }
+        game.input.jump = (base.indexOf("j") >= 0 && (i % 40) < 20) || timedJump;
         try { game.update(); } catch (e) { err = e.message + " @" + (e.stack || "").split("\n")[1]; break; }
         if (i % 40 === 0) trail.push(i + ":" + Math.round(game.player.py) + "/" + Math.round(game.player.x) + (game.player.onGround ? "G" : "g"));
       }

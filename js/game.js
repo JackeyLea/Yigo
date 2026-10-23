@@ -70,6 +70,15 @@ Game.prototype.startGame = function () {
 Game.prototype.loadArea = function (world, area, entry) {
   entry = entry || {};
   var L = decodeLevel(world, area, this.time);
+  this._finishLoadArea(L, entry);
+};
+// 直接按区域指针字节加载(奖励区/传送区)
+Game.prototype.loadAreaByPointer = function (ptr, entry) {
+  entry = entry || {};
+  var L = decodeLevelByPointer(ptr, this.world);
+  this._finishLoadArea(L, entry);
+};
+Game.prototype._finishLoadArea = function (L, entry) {
   this.level = L;
   this.enemies = [];
   this.items = [];
@@ -79,9 +88,11 @@ Game.prototype.loadArea = function (world, area, entry) {
   this.brickCoinTimers = {};
   // 敌人合并 piranhas
   this.spawnList = L.enemies.slice();
-  // 时间
-  var tset = L.timerSetting;
-  if (tset > 0) this.time = [400, 400, 300, 200][tset];
+  // 时间(奖励区保留时间)
+  if (!entry.keepTime) {
+    var tset = L.timerSetting;
+    if (tset > 0) this.time = [400, 400, 300, 200][tset];
+  }
   this.timeWarned = false;
   // 起点
   var startX = entry.px !== undefined ? entry.px : (L.startType === 3 ? 40 : 40);
@@ -108,6 +119,8 @@ Game.prototype.loadArea = function (world, area, entry) {
     this.spawnList.push({ x: sp.x, y: sp.y, id: 0x32 });
   }
   this.spawnList.sort(function (a, b) { return a.x - b.x; });
+  this.currentWarp = null;
+  this.warpIdx = 0;
   this.playAreaMusic();
 };
 
@@ -438,6 +451,14 @@ Game.prototype.addScore = function (pts, x, y) {
 // ============ 敌人生成 ============
 Game.prototype.updateSpawns = function () {
   var right = this.scrollX + SCREEN_W + 48;
+  // 激活滚动经过的 warp 标记(原版 ParseRow0e 语义)
+  var wl = this.level.warps || [];
+  while (this.warpIdx < wl.length && wl[this.warpIdx].x <= right - 48) {
+    var wp = wl[this.warpIdx++];
+    if (wp.worldCond === this.world) {
+      this.currentWarp = wp;
+    }
+  }
   while (this.spawnIdx < this.spawnList.length && this.spawnList[this.spawnIdx].x <= right) {
     var s = this.spawnList[this.spawnIdx++];
     if (s.x < this.scrollX - 32) continue; // 已经过的不再生成
@@ -737,28 +758,18 @@ Game.prototype.checkPipeEnter = function () {
   var p = this.player;
   if (!this.input.down || !p.onGround) return;
   var L = this.level;
-  var col = Math.floor((p.x + 6) / 16);
   var row = Math.floor((p.py + p.height()) / 16);
-  var mt = L.at(col, row - 0);
-  // 站在管顶(管顶块在脚下)
-  var topMt = L.at(col, row - 1);
-  if (topMt === 0x10) {
-    // 找对应的 warp (enemy 数据 row E)
-    for (var i = 0; i < (L.warps || []).length; i++) {
-      var w = L.warps[i];
-      var wcol = Math.floor(w.x / 16);
-      if (Math.abs(wcol - col) <= 1 && w.y < 200) {
-        this.enterPipe(w);
-        return;
-      }
-    }
+  // 双脚均须站在可进入管顶(原版: 左脚0x10 右脚0x11)
+  var lcol = Math.floor((p.x + 2) / 16), rcol = Math.floor((p.x + 10) / 16);
+  if (L.at(lcol, row) === 0x10 && L.at(rcol, row) === 0x11) {
+    if (this.currentWarp) this.enterPipe(this.currentWarp);
   }
 };
 
 Game.prototype.enterPipe = function (w) {
   var p = this.player;
   AudioSys.playSfx("sfx_pipe");
-  // 保存主关状态
+  // 保存主关状态(首次离开主关时)
   if (this.area < 4 && !this.mainAreaState) {
     this.mainAreaState = {
       area: this.area,
@@ -776,33 +787,47 @@ Game.prototype.updatePipeAnim = function () {
   var pa = this.pipeAnim;
   pa.timer++;
   if (pa.timer < 40) {
-    p.py += 0.5; // 下沉
+    p.py += 0.5; // 下沉进管
     return;
   }
-  // 载入目标区
   var w = pa.warp;
-  var areaIdx = this.findAreaIndexByPointer(w.destArea);
   this.pipeAnim = null;
-  if (areaIdx !== null) {
-    this.loadArea(this.world, areaIdx, {
-      px: w.destPage * 256 + 24,
-      startType: 4, // 从管中升起(简化为左入)
-      scrollX: Math.max(0, w.destPage * 256 - 40),
-    });
-    this.player.x = w.destPage * 256 + 24;
-    this.snapPlayerToGround();
-    this.scrollX = Math.max(0, this.player.x - 80);
-  }
+  this.loadAreaByPointer(w.destArea, {
+    px: w.destPage * 256 + 24,
+    keepTime: true,
+    bonus: true,
+  });
+  this.player.x = w.destPage * 256 + 24;
+  this.player.py = 32;
+  this.snapPlayerToGround();
+  this.scrollX = Math.max(0, this.player.x - 80);
 };
 
-Game.prototype.findAreaIndexByPointer = function (ptr) {
-  var worldTable = [LEVEL_TABLES.World1Areas, LEVEL_TABLES.World2Areas, LEVEL_TABLES.World3Areas, LEVEL_TABLES.World4Areas,
-    LEVEL_TABLES.World5Areas, LEVEL_TABLES.World6Areas, LEVEL_TABLES.World7Areas, LEVEL_TABLES.World8Areas];
-  var wt = worldTable[this.world];
-  for (var i = 0; i < wt.length; i++) {
-    if (wt[i] === ptr) return i;
+// 奖励区终点: 走到出口侧管 → 返回主关
+Game.prototype.checkBonusExit = function () {
+  var L = this.level;
+  if (!this.mainAreaState) return;
+  var p = this.player;
+  // 出口侧管: 玩家右侧撞到侧管瓦片(0x1c..0x21)且在向右走
+  var col = Math.floor((p.x + 13) / 16);
+  var rowM = Math.floor((p.py + p.height() / 2) / 16);
+  var mt = L.at(col, rowM);
+  if (mt >= 0x1c && mt <= 0x21 && this.input.right) {
+    // 用本区的 warp(回到主关某页)
+    var w = this.currentWarp;
+    var m = this.mainAreaState;
+    this.mainAreaState = null;
+    AudioSys.playSfx("sfx_pipe");
+    if (w && (w.worldCond === this.world)) {
+      this.loadAreaByPointer(w.destArea, { px: w.destPage * 256 + 24, keepTime: true });
+      this.player.x = w.destPage * 256 + 24;
+    } else {
+      this.loadArea(this.world, m.area, { px: m.px, scrollX: m.scrollX, keepTime: true });
+    }
+    this.snapPlayerToGround();
+    this.player.py = Math.min(this.player.py, 160);
+    this.scrollX = Math.max(0, this.player.x - 80);
   }
-  return null;
 };
 
 // ============ 主更新 ============
@@ -894,6 +919,7 @@ Game.prototype.updatePlaying = function (inp, pin) {
   this.playerItemCollide();
   this.checkFlagpole();
   this.checkPipeEnter();
+  this.checkBonusExit();
   this.checkCheckpoint();
   this.updateScroll();
   if (this.stompTimer > 0) { this.stompTimer--; if (this.stompTimer === 0) this.stompChain = 0; }

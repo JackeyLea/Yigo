@@ -83,20 +83,13 @@ function sceneryItem(idx) { // idx 1-12 → 3 元瓦片
 // worldNumber 0-7, areaNumber: 0-3 主关卡, 4+ 奖励区索引
 var AREA_ADDR_OFFSETS = null; // 拼接的世界区域表(惰性)
 
-function decodeLevel(worldNumber, areaNumber, prevTimer) {
+function decodeLevelByPointer(areaPointer, worldNumber) {
   TB = SMB_TABLES;
-  if (!AREA_ADDR_OFFSETS) {
-    AREA_ADDR_OFFSETS = [].concat(
-      LEVEL_TABLES.World1Areas, LEVEL_TABLES.World2Areas, LEVEL_TABLES.World3Areas, LEVEL_TABLES.World4Areas,
-      LEVEL_TABLES.World5Areas, LEVEL_TABLES.World6Areas, LEVEL_TABLES.World7Areas, LEVEL_TABLES.World8Areas);
-  }
   var TBW = LEVEL_TABLES;
   var L = new Level();
-  L._worldNumber = worldNumber; L._areaNumber = areaNumber;
-
-  // -- 找 AreaPointer --
-  var off = TBW.WorldAddrOffsets[worldNumber] + areaNumber;
-  var areaPointer = AREA_ADDR_OFFSETS[off];
+  L._worldNumber = worldNumber === undefined ? 0 : worldNumber;
+  L._areaNumber = 0;
+  L.areaPointer = areaPointer;
 
   var areaType = (areaPointer >> 5) & 3;
   L.areaType = areaType;
@@ -282,6 +275,18 @@ function decodeAreaObjects(L, data, worldNumber) {
 
   // 裁剪宽度
   L.widthUsed = totalCols;
+}
+
+function decodeLevel(worldNumber, areaNumber, prevTimer) {
+  if (!AREA_ADDR_OFFSETS) {
+    AREA_ADDR_OFFSETS = [].concat(
+      LEVEL_TABLES.World1Areas, LEVEL_TABLES.World2Areas, LEVEL_TABLES.World3Areas, LEVEL_TABLES.World4Areas,
+      LEVEL_TABLES.World5Areas, LEVEL_TABLES.World6Areas, LEVEL_TABLES.World7Areas, LEVEL_TABLES.World8Areas);
+  }
+  var off = LEVEL_TABLES.WorldAddrOffsets[worldNumber] + areaNumber;
+  var L = decodeLevelByPointer(AREA_ADDR_OFFSETS[off], worldNumber);
+  L._areaNumber = areaNumber;
+  return L;
 }
 
 // 单个对象在当前列的渲染(等价 RunAObj 分派 + 每列递进)
