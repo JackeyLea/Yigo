@@ -3,6 +3,18 @@
 以 1985 年 NES 原版《超级玛丽兄弟》为蓝本的网页复刻。**全部 32 个关卡(8 世界 × 4 关)
 与原版完全相同**(关卡数据直接提取自原版 ROM 反汇编),操作手感与物理常量按原版调校。
 
+## 版本选择
+
+启动后进入**版本选择首页**,四个入口:
+
+- **SUPER MARIO BROS.**(1985 初代)— 32 关
+- **THE LOST LEVELS**(1986 日版二代"失落的关卡")— **含世界 9 与 A~D,共 52 关**
+  - 毒蘑菇(长得像蘑菇,吃了受伤)
+  - 逆风关(2-1 等,阵风把马里奥往右推,有树叶飘动)
+  - 可选**路易吉**:跳得更高、更滑(低摩擦),进场画面按 ↑/↓ 切换
+  - 倒挂水管、云上跳台等新地形
+- **SUPER MARIO BROS. 3** / **SUPER MARIO WORLD** — 待定(置灰)
+
 ## 运行方式
 
 任意静态文件服务器皆可,例如:
@@ -48,6 +60,11 @@ python3 -m http.server 8080
 - ✅ 1-1 无敌星彩蛋、水管区、金币房等隐藏要素均按原版数据生成
 
 ## 技术实现
+
+- **双版本数据集**:初代数据提取自 SuperMarioBros-C;失落的关卡数据提取自
+  [smb2j-disassembly](https://github.com/threecreepio/smb2j-disassembly)(doppelganger 反汇编)。
+  两代引擎相同但元瓦片编码/对象分派表不同(二代插入了毒蘑菇条目、新增倒管与风开关对象),
+  由 `js/datasets.js` 统一抽象,`js/leveldata_ll.js` 为二代数据集。
 
 - **关卡数据**:从 [SuperMarioBros-C](https://github.com/MitchellSternke/SuperMarioBros-C)
   (smbdis.asm 反汇编的 C 翻译版)提取 34 个区域的对象流/敌人流字节,
