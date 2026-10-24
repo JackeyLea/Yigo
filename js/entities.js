@@ -593,7 +593,7 @@ Item.prototype.draw = function (ctx, scrollX) {
   var sx = Math.round(this.x - scrollX);
   var sy = Math.round(this.py) + 32;
   if (sx < -16 || sx > 260) return;
-  if (this.kind === "flower" || this.kind === "star" || this.kind === "mushroom" || this.kind === "oneup") {
+  if (this.kind === "flower" || this.kind === "star" || this.kind === "mushroom" || this.kind === "oneup" || this.kind === "poison") {
     g.drawItemSprite(ctx, this.kind, sx, sy, this.animTimer);
   }
 };

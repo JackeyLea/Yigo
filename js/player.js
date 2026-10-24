@@ -61,13 +61,13 @@ Player.prototype.updateHorizontal = function (input) {
   var maxSpeed, accel;
   if (this.onGround) {
     if (run && (left || right)) {
-      maxSpeed = 0x28; accel = 0xe4;      // 跑
+      maxSpeed = 0x28; accel = this.fric(0);      // 跑
     } else {
-      maxSpeed = 0x18; accel = 0x98;      // 走
+      maxSpeed = 0x18; accel = this.fric(1);      // 走
     }
   } else {
-    maxSpeed = 0x10; accel = 0x98;        // 空中(转向/慢)
-    if (Math.abs(this.xs) > 1.0) { maxSpeed = this.running ? 0x28 : 0x18; accel = 0xe4; }
+    maxSpeed = 0x10; accel = this.fric(1);        // 空中(转向/慢)
+    if (Math.abs(this.xs) > 1.0) { maxSpeed = this.running ? 0x28 : 0x18; accel = this.fric(0); }
   }
 
   var moving = left !== right;
@@ -77,7 +77,7 @@ Player.prototype.updateHorizontal = function (input) {
     if (this.onGround && this.xs !== 0 && want !== Math.sign(this.xs)) {
       // 打滑: 摩擦×2
       this.skidding = true;
-      accel = 0x98 * 2;
+      accel = this.fric(1) * 2;
       this.applyAccel(want, accel, 0x10);
       if (Math.abs(this.xs) < 0.7 && Math.abs(this.xForce) < 0x0b0) {
         this.xs = 0; this.xForce = 0;
@@ -88,7 +88,7 @@ Player.prototype.updateHorizontal = function (input) {
     }
   } else if (this.onGround) {
     // 松手摩擦
-    this.applyFriction(0xd0);
+    this.applyFriction(this.fric(2));
   }
 };
 
@@ -110,6 +110,10 @@ Player.prototype.applyAccel = function (dir, accel256, maxSpeed) {
   var cap = maxSpeed / 16;
   if (this.xs > cap) { this.xs = cap; }
   if (this.xs < -cap) { this.xs = -cap; }
+};
+
+Player.prototype.fric = function (i) {
+  return (this.fricTable || [0xe4, 0x98, 0xd0])[i];
 };
 
 Player.prototype.applyFriction = function (fric256) {
@@ -142,10 +146,10 @@ Player.prototype.jumpInit = function () {
 };
 
 Player.prototype.risingGravity = function () {
-  return [0x20, 0x20, 0x1e, 0x28, 0x28][this.jumpIdx || 0];
+  return (this.riseTable || [0x20, 0x20, 0x1e, 0x28, 0x28])[this.jumpIdx || 0];
 };
 Player.prototype.fallingGravity = function () {
-  return [0x70, 0x70, 0x60, 0x90, 0x90][this.jumpIdx || 0];
+  return (this.fallTable || [0x70, 0x70, 0x60, 0x90, 0x90])[this.jumpIdx || 0];
 };
 
 Player.prototype.updateVertical = function (input, prevA) {
@@ -181,7 +185,7 @@ Player.prototype.updateSwim = function (input) {
     if (this.xs < -1.0) this.xs = -1.0;
     this.dir = want;
   } else {
-    this.applyFriction(0xd0);
+    this.applyFriction(this.fric(2));
   }
   // 蹬水跳
   if (input.jump && !this.jumpHeld && this.swimKickCooldown <= 0) {

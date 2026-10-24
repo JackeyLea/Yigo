@@ -129,8 +129,9 @@ function buildProcTiles() {
 
 // 绘制一个元瓦片到 ctx (动画帧由调用者替换)
 // tilesImg: 已加载的 tiles.png Image
-function drawMetatile(ctx, tilesImg, mt, dx, dy, frameOverride) {
-  var art = frameOverride || MT_ART[mt];
+function drawMetatile(ctx, tilesImg, mt, dx, dy, frameOverride, artMap) {
+  var AM = artMap || MT_ART;
+  var art = frameOverride || AM[mt];
   if (!art) {
     // 程序瓦片
     if (!PROC_TILES[0x25]) buildProcTiles();

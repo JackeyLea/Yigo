@@ -80,10 +80,28 @@ function sceneryItem(idx) { // idx 1-12 → 3 元瓦片
 // worldNumber 0-7, areaNumber: 0-3 主关卡, 4+ 奖励区索引
 var AREA_ADDR_OFFSETS = null; // 拼接的世界区域表(惰性)
 
-function decodeLevelByPointer(areaPointer, worldNumber) {
-  TB = SMB_TABLES;
-  var TBW = LEVEL_TABLES;
+function decodeLevelByPointer(areaPointer, worldNumber, DS) {
+  DS = DS || DATASETS.smb1;
+  TB = DS.tables;
+  var useAD = DS.id === "smb2j" && worldNumber >= 9;
+  var TBW = useAD ? {
+    EnemyDataAddrLow: DS.worldTables.ADEnemyDataAddrLow,
+    EnemyDataAddrHigh: DS.worldTables.ADEnemyDataAddrHigh,
+    AreaDataAddrLow: DS.worldTables.ADAreaDataAddrLow,
+    AreaDataAddrHigh: DS.worldTables.ADAreaDataAddrHigh,
+    EnemyAddrHOffsets: DS.worldTables.ADEnemyAddrHOffsets || DS.worldTables.EnemyAddrHOffsets,
+    AreaDataHOffsets: DS.worldTables.ADAreaDataHOffsets || DS.worldTables.AreaDataHOffsets,
+  } : {
+    EnemyAddrHOffsets: DS.worldTables.MainEnemyAddrHOffsets || DS.worldTables.EnemyAddrHOffsets,
+    AreaDataHOffsets: DS.worldTables.MainAreaDataHOffsets || DS.worldTables.AreaDataHOffsets,
+    EnemyDataAddrLow: DS.worldTables.EnemyDataAddrLow,
+    EnemyDataAddrHigh: DS.worldTables.EnemyDataAddrHigh,
+    AreaDataAddrLow: DS.worldTables.AreaDataAddrLow,
+    AreaDataAddrHigh: DS.worldTables.AreaDataAddrHigh,
+  };
+  var BYP = DS.BY_PTR || BY_PTR;
   var L = new Level();
+  L.dataset = DS.id;
   L._worldNumber = worldNumber === undefined ? 0 : worldNumber;
   L._areaNumber = 0;
   L.areaPointer = areaPointer;
@@ -100,9 +118,8 @@ function decodeLevelByPointer(areaPointer, worldNumber) {
   var aOff = (aBase + lidx) & 0xff;
   var aPtr = TBW.AreaDataAddrLow[aOff] | (TBW.AreaDataAddrHigh[aOff] << 8);
 
-  var eData = LEVEL_DATA[BY_PTR[ePtr]].data;
-  var aData = LEVEL_DATA[BY_PTR[aPtr]].data;
-  window.__ptr = "ptr " + aPtr.toString(16) + "=" + BY_PTR[aPtr] + " ep" + ePtr.toString(16) + "=" + BY_PTR[ePtr];
+  var eData = DS.LEVEL_DATA[BYP[ePtr]].data;
+  var aData = DS.LEVEL_DATA[BYP[aPtr]].data;
 
   // -- 关卡头 --
   var h1 = aData[0], h2 = aData[1];
@@ -117,17 +134,17 @@ function decodeLevelByPointer(areaPointer, worldNumber) {
   else L.style = styleBits;
 
   // -- 解码地形对象流, 逐页逐列 --
-  decodeAreaObjects(L, aData, worldNumber);
+  decodeAreaObjects(L, aData, worldNumber, DS);
 
   // -- 解码敌人流 --
-  decodeEnemyData(L, eData, worldNumber);
+  decodeEnemyData(L, eData, worldNumber, DS);
 
   // 裁剪宽度到实际使用(留一页余量)
   return L;
 }
 
 // ---------- 地形对象流解码(逐列状态机) ----------
-function decodeAreaObjects(L, data, worldNumber) {
+function decodeAreaObjects(L, data, worldNumber, DS) {
   var objects = [];       // 解析出的对象 {off, page, kind...}
   var page = 0;
   var stream = [];
@@ -273,20 +290,22 @@ function decodeAreaObjects(L, data, worldNumber) {
   L.widthUsed = totalCols;
 }
 
-function decodeLevel(worldNumber, areaNumber, prevTimer) {
-  if (!AREA_ADDR_OFFSETS) {
-    AREA_ADDR_OFFSETS = [].concat(
-      LEVEL_TABLES.World1Areas, LEVEL_TABLES.World2Areas, LEVEL_TABLES.World3Areas, LEVEL_TABLES.World4Areas,
-      LEVEL_TABLES.World5Areas, LEVEL_TABLES.World6Areas, LEVEL_TABLES.World7Areas, LEVEL_TABLES.World8Areas);
-  }
-  var off = LEVEL_TABLES.WorldAddrOffsets[worldNumber] + areaNumber;
-  var L = decodeLevelByPointer(AREA_ADDR_OFFSETS[off], worldNumber);
+function decodeLevel(worldNumber, areaNumber, prevTimer, DS) {
+  DS = DS || DATASETS.smb1;
+  var WT = DS.worldTables;
+  var useAD = DS.id === "smb2j" && worldNumber >= 9;
+  var addr = useAD
+    ? [].concat(WT.WorldAAreas || [], WT.WorldBAreas || [], WT.WorldCAreas || [], WT.WorldDAreas || [])
+    : [].concat(WT.World1Areas || [], WT.World2Areas || [], WT.World3Areas || [], WT.World4Areas || [],
+        WT.World5Areas || [], WT.World6Areas || [], WT.World7Areas || [], WT.World8Areas || [], WT.World9Areas || []);
+  var off = (useAD ? 0 : worldNumber) + areaNumber;
+  var L = decodeLevelByPointer(addr[off], worldNumber, DS);
   L._areaNumber = areaNumber;
   return L;
 }
 
 // 单个对象在当前列的渲染(等价 RunAObj 分派 + 每列递进)
-function renderObjectColumn(L, a, col, pageLoc, colPos, worldNumber) {
+function renderObjectColumn(L, a, col, pageLoc, colPos, worldNumber, DS) {
   var e = a.e, row = e.row, b2 = e.b2;
   var nyb = b2 & 0x0f;               // 低半字节: 长度/高度
   var type = (b2 >> 4) & 7;          // d6-4
@@ -305,20 +324,20 @@ function renderObjectColumn(L, a, col, pageLoc, colPos, worldNumber) {
     if (type === 0) {
       // 小对象
       var subtype = nyb;
-      runSmallObject(L, a, col, absObjCol, row, subtype, finish, worldNumber);
+      runSmallObject(L, a, col, absObjCol, row, subtype, finish, worldNumber, DS);
     } else {
       // 大对象 1-7
-      runLargeObject(L, a, col, absObjCol, row, type, nyb, finish, worldNumber);
+      runLargeObject(L, a, col, absObjCol, row, type, nyb, finish, worldNumber, DS);
     }
   } else if (row === 0x0c) {
     // 行12: 特殊
     var t2 = type + 8;
-    runRow12Object(L, a, col, absObjCol, t2, type, nyb, finish);
+    runRow12Object(L, a, col, absObjCol, t2, type, nyb, finish, DS);
   } else if (row === 0x0d) {
     // 行13 特殊对象(d6=1): case = (b2&0x3f)+34
     var val = (b2 & 0x3f);
     var cs = val + 34;
-    runRow13Object(L, a, col, absObjCol, cs, val, nyb, finish, worldNumber);
+    runRow13Object(L, a, col, absObjCol, cs, val, nyb, finish, worldNumber, DS);
   } else if (row === 0x0e) {
     // 行14: 改属性(2字节+extra) — 一次性
     var nb = b2;
@@ -332,44 +351,64 @@ function renderObjectColumn(L, a, col, pageLoc, colPos, worldNumber) {
     finish();
   } else {
     // 行15: case = type + 16
-    runRow15Object(L, a, col, absObjCol, type + 16, type, nyb, finish, worldNumber);
+    runRow15Object(L, a, col, absObjCol, type + 16, type, nyb, finish, worldNumber, DS);
   }
 }
 
-// 小对象(子类型0-15 → case 22-37): 均在对象自身列渲染一次
-function runSmallObject(L, a, col, absObjCol, row, subtype, finish, worldNumber) {
+// 小对象: case = subtype+22 → 数据集分派表名称; 均在对象自身列渲染一次
+function runSmallObject(L, a, col, absObjCol, row, subtype, finish, worldNumber, DS) {
   var c = absObjCol;
   var cs = subtype + 22;
-  switch (cs) {
-    case 22: // ?块(蘑菇)
-    case 23: // ?块(金币)
-      L.set(c, row, cs === 22 ? 0xc1 : 0xc0); finish(); break;
-    case 24: // 隐藏金币块
-      L.set(c, row, 0x5f); finish(); break;
-    case 25: // 隐藏1UP
-      L.set(c, row, 0x60); finish(); break;
-    case 26: // 砖(蘑菇)
-    case 27: // 砖(藤蔓)
-    case 28: // 砖(星)
-    case 29: // 砖(多金币)
-    case 30: // 砖(1UP)
-      var adder = (L.areaType === 1) ? 0 : 5;
-      var mt = SMB_TABLES.BrickQBlockMetatiles[adder + subtype];
+  var D = DS || DATASETS.smb1;
+  var name = D.dispatch[cs];
+  var T = TB;
+  switch (name) {
+    case "QuestionBlock": {
+      // ?块/隐藏块: 元瓦tile直接由分表决定(隐藏内容在 SMB2J 中也是不可见块)
+      var idx;
+      if (D.id === "smb2j") idx = subtype;          // SMB2J: subtype 直接索引(0-6)
+      else idx = (cs === 24) ? 2 : (cs - 22);        // SMB1: 0=道具 1=币 (24为隐藏币)
+      var mt = T.BrickQBlockMetatiles[idx];
       L.set(c, row, mt); finish(); break;
-    case 31: runWaterPipe(L, c, row); finish(); break;
-    case 32: L.set(c, row, 0xc4); finish(); break; // 用过的块
-    case 33: runSpring(L, c, row); finish(); break;
-    case 34: runIntroPipe(L, a, col, absObjCol, row); if (col >= absObjCol + 2) finish(); break;
-    case 35: runFlagpole(L, c, row, absObjCol); finish(); break;
-    case 36: // 斧头
-      L.set(c, row, 0xc5); finish(); break;
-    case 37: L.set(c, row, 0x0c); finish(); break; // 锁链
+    }
+    case "Hidden1UpBlock":
+      L.set(c, row, D.id === "smb2j" ? 0x5f : 0x60); finish(); break;
+    case "BrickWithItem": case "BrickWithCoins": {
+      var adder = (L.areaType === 1) ? 0 : (D.id === "smb2j" ? 6 : 5);
+      var mtb = T.BrickQBlockMetatiles[adder + subtype];
+      L.set(c, row, mtb); finish(); break;
+    }
+    case "WaterPipe": runWaterPipe(L, c, row); finish(); break;
+    case "EmptyBlock": L.set(c, row, D.id === "smb2j" ? 0xc5 : 0xc4); finish(); break;
+    case "Jumpspring": runSpring(L, c, row); finish(); break;
+    case "IntroPipe": runIntroPipe(L, a, col, absObjCol, row); if (col >= absObjCol + 2) finish(); break;
+    case "FlagpoleObject": runFlagpole(L, c, row, absObjCol); finish(); break;
+    case "AxeObj": L.set(c, row, D.id === "smb2j" ? 0xc6 : 0xc5); finish(); break;
+    case "ChainObj": L.set(c, row, 0x0c); finish(); break;
+    case "UpsideDownPipe_High": case "UpsideDownPipe_Low":
+      runUpsideDownPipe(L, c, row, name === "UpsideDownPipe_High" ? 1 : 4, subtype);
+      finish(); break;
+    case "WindOn": L.wind = true; finish(); break;
+    case "WindOff": L.wind = false; finish(); break;
     default: finish();
   }
 }
 
+// 倒挂水管(SMB2J): 从天花板垂下, 高nyb+1, 可带倒食人花
+function runUpsideDownPipe(L, col, row, startRow, subtype) {
+  var height = (subtype & 0x07) + 1;
+  var VP = TB.VerticalPipeData;
+  // 顶(倒) = 常规底反过来: 用 0x14/0x15 翻转绘制由渲染层处理; 这里以管顶编码近似
+  L.set(col, startRow, 0x10 + (L.enterableUD ? 2 : 0));
+  for (var i = 1; i < height; i++) {
+    L.set(col, startRow + i, 0x14);
+  }
+  L.upsideDownPipes = L.upsideDownPipes || [];
+  L.upsideDownPipes.push({ x: col * 16, y: startRow * 16, height: height });
+}
+
 // 大对象(类型1-7)
-function runLargeObject(L, a, col, absObjCol, row, type, nyb, finish, worldNumber) {
+function runLargeObject(L, a, col, absObjCol, row, type, nyb, finish, worldNumber, DS) {
   var S = a.state;
   if (type === 1) {
     // AreaStyleObject: 树台(地面/云) / 蘑菇台(地下) / 炮台(城堡)
@@ -418,8 +457,8 @@ function runLargeObject(L, a, col, absObjCol, row, type, nyb, finish, worldNumbe
     return;
   }
   var metatiles = {
-    2: brickMetatile(L), 3: solidMetatile(L), 4: coinMetatile(L),
-    5: brickMetatile(L), 6: solidMetatile(L),
+    2: brickMetatile(L, DS), 3: solidMetatile(L, DS), 4: coinMetatile(L, DS),
+    5: brickMetatile(L, DS), 6: solidMetatile(L, DS),
   };
   if (type === 7 || (type === 0 && false)) {
     runPipe(L, a, col, absObjCol, row, nyb, finish, worldNumber);
@@ -445,12 +484,13 @@ function runLargeObject(L, a, col, absObjCol, row, type, nyb, finish, worldNumbe
   if (S.i >= S.len) finish();
 }
 
-function brickMetatile(L) {
-  if (L.cloudOverride) return SMB_TABLES.BrickMetatiles[4];
-  return SMB_TABLES.BrickMetatiles[L.areaType];
+function brickMetatile(L, DS) {
+  var T = (DS && DS.tables) ? DS.tables : SMB_TABLES;
+  if (L.cloudOverride) return T.BrickMetatiles[4];
+  return T.BrickMetatiles[L.areaType];
 }
-function solidMetatile(L) { return SMB_TABLES.SolidBlockMetatiles[L.areaType]; }
-function coinMetatile(L) { return SMB_TABLES.CoinMetatileData[L.areaType]; }
+function solidMetatile(L, DS) { var T = (DS && DS.tables) ? DS.tables : SMB_TABLES; return T.SolidBlockMetatiles[L.areaType]; }
+function coinMetatile(L, DS) { var T = (DS && DS.tables) ? DS.tables : SMB_TABLES; return T.CoinMetatileData[L.areaType]; }
 
 // 水管: 水平2列, 高 nyb+1, d3=可进入
 function runPipe(L, a, col, absObjCol, row, nyb, finish, worldNumber) {
@@ -462,7 +502,7 @@ function runPipe(L, a, col, absObjCol, row, nyb, finish, worldNumber) {
   var y = S.step === 0 ? 1 : 0; // 原版: 首列 leftover=1, 次列0
   var topIdx = enterable ? y : y + 4;
   var bodyIdx = enterable ? y + 2 : y + 4 + 2;
-  var VP = SMB_TABLES.VerticalPipeData;
+  var VP = TB.VerticalPipeData;
   L.set(col, row, VP[topIdx]);
   L.renderUnder(col, row + 1, VP[bodyIdx], S.height - 1);
   // 食人花: 世界1-1 不生成(原版规则)
@@ -490,8 +530,8 @@ function runIntroPipe(L, a, col, absObjCol, row) {
   var S = a.state;
   if (S.step === undefined) { S.step = 0; }
   if (col < absObjCol) return;
-  var sp = SMB_TABLES.SidePipeTopPart, sb = SMB_TABLES.SidePipeBottomPart;
-  var shaft = SMB_TABLES.SidePipeShaftData;
+  var sp = TB.SidePipeTopPart, sb = TB.SidePipeBottomPart;
+  var shaft = TB.SidePipeShaftData;
   if (S.step < 3) {
     var i = S.step;
     // 竖直部分随列绘制: 原版按水平偏移绘制侧管
@@ -535,7 +575,7 @@ function runRow12Object(L, a, col, absObjCol, cs, type, nyb, finish) {
       break;
     case 9: // 滑轮绳
       if (col === absObjCol) {
-        var pr = SMB_TABLES.PulleyRopeMetatiles;
+        var pr = TB.PulleyRopeMetatiles;
         // 左滑轮-绳-右滑轮: 按长度
         if (S.len === undefined) { S.len = nyb + 1; S.i = 0; }
         if (col < absObjCol) return;
@@ -548,8 +588,8 @@ function runRow12Object(L, a, col, absObjCol, cs, type, nyb, finish) {
         if (S.len === undefined) { S.len = nyb + 1; S.i = 0; }
         if (col < absObjCol) return;
         if (S.i < S.len) {
-          var mt2 = S.i === 0 ? SMB_TABLES.PulleyRopeMetatiles[0] :
-            (S.i === S.len - 1 ? SMB_TABLES.PulleyRopeMetatiles[2] : SMB_TABLES.PulleyRopeMetatiles[1]);
+          var mt2 = S.i === 0 ? TB.PulleyRopeMetatiles[0] :
+            (S.i === S.len - 1 ? TB.PulleyRopeMetatiles[2] : TB.PulleyRopeMetatiles[1]);
           L.set(col, 0, mt2);
           S.i++;
         } else finish();
@@ -594,30 +634,30 @@ function runQRow(L, a, col, absObjCol, row, nyb, finish) {
   } else finish();
 }
 
-// 行13对象: case = val+34
-function runRow13Object(L, a, col, absObjCol, cs, val, nyb, finish, worldNumber) {
-  switch (cs) {
-    case 34: runIntroPipe(L, a, col, absObjCol, val); if (col >= absObjCol + 3) finish(); break;
-    case 35: runFlagpole(L, col, 0, absObjCol); finish(); break;
-    case 36: L.set(col, 8, 0xc5); finish(); break; // 斧头
-    case 37: L.set(col, val, 0x0c); finish(); break;
-    case 38: // Boss桥
-      runCastleBridge(L, a, col, absObjCol, finish); break;
-    case 39: // 滚动锁+WarpZone
+// 行13对象: case = val+34 → 名称分派
+function runRow13Object(L, a, col, absObjCol, cs, val, nyb, finish, worldNumber, DS) {
+  var D = DS || DATASETS.smb1;
+  var name = D.dispatch[cs];
+  switch (name) {
+    case "IntroPipe": runIntroPipe(L, a, col, absObjCol, val); if (col >= absObjCol + 3) finish(); break;
+    case "FlagpoleObject": runFlagpole(L, col, 0, absObjCol); finish(); break;
+    case "AxeObj": L.set(col, 8, D.id === "smb2j" ? 0xc6 : 0xc5); finish(); break;
+    case "ChainObj": L.set(col, val, 0x0c); finish(); break;
+    case "CastleBridgeObj": runCastleBridge(L, a, col, absObjCol, finish); break;
+    case "ScrollLockObject_Warp":
       L.warpZone = (worldNumber === 0) ? 1 : ((L.areaType === 1) ? 2 : 3);
       L.scrollLockAt.push(col);
       L.scrollLock = true;
       L.scrollZoneCol = col;
       finish(); break;
-    case 40:
-    case 41:
+    case "ScrollLockObject":
       L.scrollLockAt.push(col);
       L.scrollLock = true;
       finish(); break;
-    case 42: L.frenzy.push({ col: col, type: 'flyingCheep' }); finish(); break;
-    case 43: L.frenzy.push({ col: col, type: 'bulletsOrCheep' }); finish(); break;
-    case 44: L.frenzy.push({ col: col, type: 'stop' }); finish(); break;
-    case 45: L.loops.push({ col: col }); finish(); break; // 迷宫回退
+    case "AreaFrenzy": L.frenzy.push({ col: col, type: 'flyingCheep' }); finish(); break;
+    case "LoopCmdE": L.loops.push({ col: col }); finish(); break;
+    case "WindOn": L.wind = true; finish(); break;
+    case "WindOff": L.wind = false; finish(); break;
     default: finish();
   }
 }
@@ -633,7 +673,7 @@ function runCastleBridge(L, a, col, absObjCol, finish) {
 }
 
 // 行15对象: case = type+16
-function runRow15Object(L, a, col, absObjCol, cs, type, nyb, finish, worldNumber) {
+function runRow15Object(L, a, col, absObjCol, cs, type, nyb, finish, worldNumber, DS) {
   switch (cs) {
     case 16: // 无尽绳
       if (col === absObjCol) L.renderUnder(col, 0, 0x40, LEVEL_ROWS);
@@ -651,8 +691,15 @@ function runRow15Object(L, a, col, absObjCol, cs, type, nyb, finish, worldNumber
       runExitPipe(L, a, col, absObjCol, nyb, finish); break;
     case 21: // 旗顶球(残留)
       L.renderUnder(col, 2, 0x6d, nyb + 1); finish(); break;
-    case 22: L.set(col, nyb, 0xc1); finish(); break;
-    case 23: L.set(col, nyb, 0xc0); finish(); break;
+    case 22: case 23: {
+      var nm = DS.dispatch[cs];
+      if (nm === "UpsideDownPipe_High" || nm === "UpsideDownPipe_Low") {
+        runUpsideDownPipe(L, col, nyb, nm === "UpsideDownPipe_High" ? 1 : 4, type);
+      } else {
+        L.set(col, nyb, cs === 22 ? 0xc1 : 0xc0);
+      }
+      finish(); break;
+    }
     default: finish();
   }
 }
@@ -680,7 +727,7 @@ function runCastle(L, a, col, absObjCol, nyb, finish, worldNumber) {
   }
   if (col < absObjCol) return;
   if (S.step < S.len) {
-    var CM = SMB_TABLES.CastleMetatiles;
+    var CM = TB.CastleMetatiles;
     // 原版: 每列从 startRow 画到 10, 数据按列偏移
     var y = S.len - S.step; // 长度递减
     var idx = S.step === 0 ? 0 : (S.len - S.step);
@@ -712,8 +759,8 @@ function runExitPipe(L, a, col, absObjCol, nyb, finish) {
   if (S.step === undefined) { S.step = 0; S.len = 3; }
   if (col < absObjCol) return;
   if (S.step < S.len) {
-    var sp = SMB_TABLES.SidePipeTopPart, sb = SMB_TABLES.SidePipeBottomPart;
-    var shaft = SMB_TABLES.SidePipeShaftData;
+    var sp = TB.SidePipeTopPart, sb = TB.SidePipeBottomPart;
+    var shaft = TB.SidePipeShaftData;
     var i = S.step;
     if (shaft[i] !== 0) {
       L.renderUnder(col, 0, shaft[i], nyb - 1);
@@ -725,7 +772,7 @@ function runExitPipe(L, a, col, absObjCol, nyb, finish) {
 }
 
 // ---------- 敌人流解码 ----------
-function decodeEnemyData(L, data, worldNumber) {
+function decodeEnemyData(L, data, worldNumber, DS) {
   var page = 0, pageSel = false;
   var p = 0;
   var hardMode = false; // 二周目标志, 由游戏状态传入; 默认关

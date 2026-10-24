@@ -1,6 +1,6 @@
 // game.js — 游戏主逻辑: 状态机/碰撞/方块/HUD/流程
 var SCREEN_W = 256, SCREEN_H = 240;
-var ST = { TITLE: 0, INTRO: 1, PLAYING: 2, DYING: 3, FLAG: 4, CASTLE_WALK: 5, TIMECOUNT: 6, LEVEL_END: 7, GAMEOVER: 8, PIPE: 9, WIN: 10 };
+var ST = { VERSION_SELECT: 11, TITLE: 0, INTRO: 1, PLAYING: 2, DYING: 3, FLAG: 4, CASTLE_WALK: 5, TIMECOUNT: 6, LEVEL_END: 7, GAMEOVER: 8, PIPE: 9, WIN: 10 };
 
 function Game(canvas) {
   this.canvas = canvas;
@@ -9,7 +9,7 @@ function Game(canvas) {
   this.images = {};
   this.input = { left: false, right: false, up: false, down: false, jump: false, run: false, start: false };
   this.prevInput = {};
-  this.state = ST.TITLE;
+  this.state = ST.VERSION_SELECT;
   this.frame = 0;
   this.menuSel = 0;         // 标题菜单 0=1P
   this.world = 0; this.area = 0;
@@ -39,6 +39,11 @@ function Game(canvas) {
   this.debug = {};
   this.player = new Player(this);
   this.frameSkip = 0;
+  this.version = "smb1";
+  this.ds = DATASETS.smb1;
+  this.character = 0;   // 0=马里奥 1=路易吉(SMB2J)
+  this.menuIdx = 0;     // 版本选择光标
+  this.windPhase = 0;
   this.speedRun = false;
   this.brickCoinTimers = {}; // 多金币砖
   this.piranhaIdx = 0;
@@ -59,23 +64,39 @@ Game.prototype.loadImages = function (cb) {
 
 // ============ 关卡装载 ============
 Game.prototype.startGame = function () {
+  this.ds = DATASETS[this.version] || DATASETS.smb1;
   this.world = 0; this.area = 0;
   this.score = 0; this.coins = 0; this.lives = 3;
   this.state = ST.INTRO;
   this.introTimer = 0;
   this.checkpoint = null;
   this.mainAreaState = null;
+  this.player.reset();
+  this.applyPhysics();
+};
+
+// 按版本/角色装载物理(SMB2J 路易吉: 高跳+滑)
+Game.prototype.applyPhysics = function () {
+  var P = this.player;
+  if (this.ds.phys && this.ds.features.luigi) {
+    var ph = this.character === 1 ? this.ds.phys.luigi : this.ds.phys.mario;
+    P.riseTable = ph.rise; P.fallTable = ph.fall; P.fricTable = ph.fric;
+  } else {
+    P.riseTable = [0x20, 0x20, 0x1e, 0x28, 0x28];
+    P.fallTable = [0x70, 0x70, 0x60, 0x90, 0x90];
+    P.fricTable = [0xe4, 0x98, 0xd0];
+  }
 };
 
 Game.prototype.loadArea = function (world, area, entry) {
   entry = entry || {};
-  var L = decodeLevel(world, area, this.time);
+  var L = decodeLevel(world, area, this.time, this.ds);
   this._finishLoadArea(L, entry);
 };
 // 直接按区域指针字节加载(奖励区/传送区)
 Game.prototype.loadAreaByPointer = function (ptr, entry) {
   entry = entry || {};
-  var L = decodeLevelByPointer(ptr, this.world);
+  var L = decodeLevelByPointer(ptr, this.world, this.ds);
   this._finishLoadArea(L, entry);
 };
 Game.prototype._finishLoadArea = function (L, entry) {
@@ -284,82 +305,88 @@ Game.prototype.bonkBlock = function (p) {
   }
   var col = bestCol;
   var mt = this.level.at(col, row);
+  var hiddenSet = this.ds.id === "smb2j" ? [0x5e, 0x5f, 0x60, 0x61] : [0x5f, 0x60];
   if (!mt || !isSolidMetatile(mt)) {
-    // 隐藏块: 只有上升顶头时
     for (var i = 0; i < cols.length; i++) {
       var hmt = this.level.at(cols[i], row);
-      if (hmt === 0x5f || hmt === 0x60) { col = cols[i]; mt = hmt; break; }
+      if (hiddenSet.indexOf(hmt) >= 0) { col = cols[i]; mt = hmt; break; }
     }
   }
   if (!mt) return;
   var L = this.level;
+  var usedCode = this.ds.id === "smb2j" ? 0xc5 : 0xc4;
 
-  switch (mt) {
-    case 0xc0: // ?金币
+  // 数据集内容映射: 元瓦片 → 内容描述
+  var content = this.ds.content[mt];
+  var isBrickLike = (mt === 0x51 || mt === 0x52 ||   // SMB1 砖
+    (this.ds.id === "smb2j" && (mt === 0x4f || mt === 0x50)));  // SMB2J 砖
+  if (!content && isBrickLike) content = "plainbrick";
+  if (!content && (mt === 0xc0 || mt === 0xc1 || (this.ds.id === "smb2j" && mt === 0xc2))) {
+    // ?块无内容记录时兜底(不应发生)
+    content = (mt === 0xc1) ? "mushroom" : "coin";
+  }
+
+  var kind = content ? content.split(":")[0] : null;
+  var hidden = content ? content.indexOf(":hidden") >= 0 : false;
+
+  switch (kind) {
+    case "coin":
       this.bumpBlock(col, row, mt);
       this.spawnCoinPop(col, row);
       this.addCoin();
-      this.level.set(col, row, 0xc4);
+      this.level.set(col, row, usedCode);
       break;
-    case 0xc1: // ?道具(小→蘑菇 大→花)
+    case "mushroom":
       this.bumpBlock(col, row, mt);
       this.spawnBlockItem(col, row, p.status === 0 ? "mushroom" : "flower");
-      this.level.set(col, row, 0xc4);
+      this.level.set(col, row, usedCode);
       break;
-    case 0x5f: // 隐藏金币
-      this.spawnCoinPop(col, row);
-      this.addCoin();
-      this.level.set(col, row, 0xc4);
-      this.bumpBlock(col, row, 0xc4);
+    case "poison":
+      this.bumpBlock(col, row, mt);
+      this.spawnBlockItem(col, row, "poison");
+      this.level.set(col, row, usedCode);
       break;
-    case 0x60: // 隐藏1UP
+    case "1up":
+      this.bumpBlock(col, row, mt);
       this.spawnBlockItem(col, row, "oneup");
-      this.level.set(col, row, 0xc4);
-      this.bumpBlock(col, row, 0xc4);
+      this.level.set(col, row, usedCode);
       break;
-    case 0x51: case 0x52: // 普通砖
-      if (p.status > 0) {
-        this.breakBrick(col, row);
-      } else {
-        this.bumpBlock(col, row, mt);
-        AudioSys.playSfx("sfx_bump");
-      }
-      break;
-    case 0x55: case 0x5a: // 砖-蘑菇
-      this.bumpBlock(col, row, mt);
-      this.spawnBlockItem(col, row, p.status === 0 ? "mushroom" : "flower");
-      this.level.set(col, row, 0xc4);
-      break;
-    case 0x56: case 0x5b: // 砖-藤蔓
+    case "vine":
       this.bumpBlock(col, row, mt);
       this.spawnVine(col, row);
-      this.level.set(col, row, 0xc4);
+      this.level.set(col, row, usedCode);
       break;
-    case 0x57: case 0x5c: // 砖-星
+    case "star":
       this.bumpBlock(col, row, mt);
       this.spawnBlockItem(col, row, "star");
-      this.level.set(col, row, 0xc4);
+      this.level.set(col, row, usedCode);
       break;
-    case 0x58: case 0x5d: // 砖-多金币
+    case "multicoin": {
       var key = col + "," + row;
-      if (!this.brickCoinTimers[key]) {
-        this.brickCoinTimers[key] = { count: 10, timer: 231 };
-      }
+      if (!this.brickCoinTimers[key]) this.brickCoinTimers[key] = { count: 10, timer: 231 };
       var bc = this.brickCoinTimers[key];
       this.spawnCoinPop(col, row);
       this.addCoin();
       this.bumpBlock(col, row, mt);
       bc.count--;
-      if (bc.count <= 0) this.level.set(col, row, 0xc4);
+      if (bc.count <= 0) this.level.set(col, row, usedCode);
       break;
-    case 0x59: case 0x5e: // 砖-1UP
-      this.bumpBlock(col, row, mt);
-      this.spawnBlockItem(col, row, "oneup");
-      this.level.set(col, row, 0xc4);
-      break;
+    }
+    case "plainbrick":
     default:
-      this.bumpBlock(col, row, mt);
-      AudioSys.playSfx("sfx_bump");
+      if (!content && isBrickLike && p.status > 0 && !hidden) {
+        this.breakBrick(col, row);
+      } else if (content) {
+        // 带内容但未知类型: 按普通处理
+        this.bumpBlock(col, row, mt);
+        AudioSys.playSfx("sfx_bump");
+      } else if (isBrickLike) {
+        this.bumpBlock(col, row, mt);
+        AudioSys.playSfx("sfx_bump");
+      } else {
+        this.bumpBlock(col, row, mt);
+        AudioSys.playSfx("sfx_bump");
+      }
       break;
   }
   // 顶块杀上方敌人
@@ -630,6 +657,10 @@ Game.prototype.playerItemCollide = function () {
         case "oneup":
           this.gainLife(it.x, it.py);
           break;
+        case "poison":
+          if (p.status > 0) p.shrink();
+          else this.killPlayer();
+          break;
       }
     }
   }
@@ -711,13 +742,9 @@ Game.prototype.updateFlagSequence = function () {
 Game.prototype.nextLevel = function () {
   this.checkpoint = null;
   var w = this.world, a = this.area;
-  // 主关卡推进
-  var worldTable = [LEVEL_TABLES.World1Areas, LEVEL_TABLES.World2Areas, LEVEL_TABLES.World3Areas, LEVEL_TABLES.World4Areas,
-    LEVEL_TABLES.World5Areas, LEVEL_TABLES.World6Areas, LEVEL_TABLES.World7Areas, LEVEL_TABLES.World8Areas];
-  var wt = worldTable[w];
   var mainCount = 4;
+  var maxWorld = this.ds.worldCount - 1; // smb1:7, smb2j:12(D)
   if (a >= mainCount) {
-    // 从奖励区回归主关
     a = this.mainAreaState ? this.mainAreaState.area : 0;
   } else {
     a++;
@@ -725,7 +752,7 @@ Game.prototype.nextLevel = function () {
   }
   this.world = w; this.area = a;
   this.mainAreaState = null;
-  if (w > 7) {
+  if (w > maxWorld) {
     this.state = ST.WIN;
     AudioSys.playMusic("jingle_worldclear", { loop: false });
     this.winTimer = 0;
@@ -836,12 +863,22 @@ Game.prototype.update = function () {
   var inp = this.input, pin = this.prevInput;
 
   switch (this.state) {
+    case ST.VERSION_SELECT:
+      this.updateVersionSelect(inp, pin);
+      break;
     case ST.TITLE:
       this.updateTitle(inp, pin);
       break;
     case ST.INTRO:
       this.introTimer++;
-      if (this.introTimer > 150) {
+      if (this.charSel && this.introTimer < 0) {
+        // SMB2J 角色选择(前 240 帧)
+        if ((this.input.up && !this.prevInput.up) || (this.input.down && !this.prevInput.down)) {
+          this.character = this.character === 0 ? 1 : 0;
+          this.applyPhysics();
+        }
+      } else if (this.introTimer > 150) {
+        this.charSel = false;
         this.loadArea(this.world, this.area, this.checkpoint ? { px: this.checkpoint.px, scrollX: this.checkpoint.scrollX } : {});
       }
       break;
@@ -879,7 +916,19 @@ Game.prototype.update = function () {
 Game.prototype.updateTitle = function (inp, pin) {
   if (inp.start && !pin.start) {
     AudioSys.unlock();
-    this.startGame();
+    // SMB2J: 角色选择
+    if (this.ds.features.luigi) {
+      this.state = ST.INTRO;
+      this.charSel = true;
+      this.startGame();
+      this.introTimer = -240; // 角色选择阶段(负计时)
+    } else {
+      this.startGame();
+    }
+  }
+  if (inp.down && !pin.down || inp.up && !pin.up) {
+    this.character = this.character === 0 ? 1 : 0;
+    this.applyPhysics();
   }
 };
 
@@ -930,6 +979,23 @@ Game.prototype.updatePlaying = function (inp, pin) {
   this.updateScroll();
   if (this.stompTimer > 0) { this.stompTimer--; if (this.stompTimer === 0) this.stompChain = 0; }
   if (p.onGround && this.stompTimer === 0 && this.stompChain > 0 && p.ys === 0) this.stompChain = 0;
+  this.updateWind();
+};
+
+// SMB2J 逆风: 地面关周期阵风把玩家向右推
+Game.prototype.updateWind = function () {
+  if (!this.ds.features.wind || !this.level.wind) return;
+  if (this.level.areaType !== 1) return;
+  this.windPhase++;
+  // 阵风: 32帧周期, 前16帧吹
+  var gust = (this.windPhase % 160) < 96;
+  if (!gust) return;
+  var p = this.player;
+  if (p.dead) return;
+  if ((this.frame & 3) === 0) {
+    p.x += 1; // 每4帧+1px (原版等效推力)
+    if (this.collideWall(p, 1)) p.x -= 1;
+  }
 };
 
 Game.prototype.updateEnemies = function () {
@@ -1024,6 +1090,9 @@ Game.prototype.render = function () {
   ctx.imageSmoothingEnabled = false;
 
   switch (this.state) {
+    case ST.VERSION_SELECT:
+      this.renderVersionSelect(ctx);
+      return;
     case ST.TITLE:
       this.renderTitle(ctx);
       return;
@@ -1066,8 +1135,13 @@ Game.prototype.render = function () {
       var mt = L.at(col, row);
       if (!mt || mt === 0x5f || mt === 0x60) continue;
       var art = null;
-      if (mt === 0xc0 || mt === 0xc1) art = qf;
-      else if (mt === 0xc2 || mt === 0xc3) art = cf;
+      if (this.ds.id === "smb2j") {
+        if (mt >= 0xc0 && mt <= 0xc2) art = qf;
+        else if (mt === 0xc3 || mt === 0xc4) art = cf;
+      } else {
+        if (mt === 0xc0 || mt === 0xc1) art = qf;
+        else if (mt === 0xc2 || mt === 0xc3) art = cf;
+      }
       // 块弹跳动画
       var bounce = this.blockAnim[col + "," + row];
       var dy = 0;
@@ -1075,7 +1149,7 @@ Game.prototype.render = function () {
         var t = 16 - bounce.timer;
         dy = -Math.round(Math.sin(Math.PI * t / 16) * 8);
       }
-      drawMetatile(ctx, this.images.tiles, mt, sc * 16 - subX, row * 16 + 32 + dy, art);
+      drawMetatile(ctx, this.images.tiles, mt, sc * 16 - subX, row * 16 + 32 + dy, art, this.ds.art);
     }
   }
 
@@ -1094,12 +1168,31 @@ Game.prototype.render = function () {
     this.drawCastleFlag(ctx);
   }
 
+  // 风叶(SMB2J)
+  this.drawWindLeaves(ctx);
+
   // 玩家
   this.drawPlayer(ctx);
 
   this.renderHUD(ctx);
   if (this.paused) drawText(ctx, "PAUSE", 112, 120);
   if (L.scrollZoneCol !== undefined && L.warpZone) this.drawWarpZone(ctx);
+};
+
+// SMB2J 风: 阵风期画漂移的树叶
+Game.prototype.drawWindLeaves = function (ctx) {
+  if (!this.ds.features.wind || !this.level.wind || this.level.areaType !== 1) return;
+  var gust = (this.windPhase % 160) < 96;
+  if (!gust) return;
+  var f = this.frame;
+  for (var i = 0; i < 8; i++) {
+    var speed = 2 + (i % 3) * 0.7;
+    var x = ((f * speed) + i * 47) % 300 - 20;
+    var y = 40 + ((i * 37 + f * ((i % 2) ? 0.8 : 1.4)) % 160);
+    ctx.fillStyle = i % 2 ? "#80d010" : "#00a800";
+    ctx.fillRect(Math.round(x), Math.round(y), 6, 3);
+    ctx.fillRect(Math.round(x) + 1, Math.round(y) - 1, 4, 1);
+  }
 };
 
 Game.prototype.tintLava = function (ctx) {
@@ -1208,6 +1301,17 @@ Game.prototype.drawWarpZone = function (ctx) {
 
 Game.prototype.drawItemSprite = function (ctx, kind, sx, sy, t) {
   var img = this.images.tiles;
+  if (kind === "poison") {
+    // 毒蘑菇: 暗紫帽 — 长得像蘑菇, 吃了受伤(原版陷阱)
+    ctx.fillStyle = "#7c3000"; ctx.fillRect(sx + 2, sy + 5, 12, 6);
+    ctx.fillStyle = "#c8a080"; ctx.fillRect(sx + 5, sy + 8, 2, 2); ctx.fillRect(sx + 9, sy + 8, 2, 2);
+    ctx.fillStyle = "#8b1a8b";
+    ctx.fillRect(sx + 3, sy + 3, 10, 3); ctx.fillRect(sx + 2, sy + 4, 12, 2);
+    ctx.fillRect(sx + 4, sy + 2, 8, 1); ctx.fillRect(sx + 5, sy + 1, 6, 1);
+    ctx.fillStyle = "#4a1a4a";
+    ctx.fillRect(sx + 4, sy + 4, 2, 2); ctx.fillRect(sx + 7, sy + 3, 2, 2); ctx.fillRect(sx + 10, sy + 4, 2, 2);
+    return;
+  }
   if (kind === "mushroom" || kind === "oneup") {
     // 蘑菇: 帽+脸 (程序绘制, 原版样式)
     var cap = kind === "mushroom" ? "#d82800" : "#00a800";
@@ -1250,21 +1354,94 @@ Game.prototype.renderHUD = function (ctx) {
   ctx.drawImage(this.images.tiles, cf[0] * 16, cf[1] * 16, 16, 16, 72, 16, 8, 8);
   drawText(ctx, "×" + pad(this.coins, 2), 82, 16);
   drawText(ctx, "WORLD", 144, 8);
-  drawText(ctx, (this.world + 1) + "-" + (this.area + 1), 152, 16);
+  drawText(ctx, this.worldLabel() + "-" + (this.area + 1), 152, 16);
   drawText(ctx, "TIME", 200, 8);
   drawText(ctx, pad(this.time, 3), 208, 16);
+};
+
+Game.prototype.worldLabel = function () {
+  if (this.ds.id === "smb2j" && this.world >= 8) {
+    return ["9", "A", "B", "C", "D"][this.world - 8];
+  }
+  return String(this.world + 1);
 };
 
 Game.prototype.renderIntro = function (ctx) {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
   this.renderHUD(ctx);
-  drawText(ctx, "WORLD " + (this.world + 1) + "-" + (this.area + 1), 88, 96);
-  // 马里奥头像 × 生命
+  drawText(ctx, "WORLD " + this.worldLabel() + "-" + (this.area + 1), 88, 80);
   var img = this.images.player;
   var fr = marioFrame(0, 0, "idle");
-  ctx.drawImage(img, fr.sx, fr.sy, fr.sw, fr.sh, 96, 120, 16, 16);
-  drawText(ctx, "× " + this.lives, 120, 124);
+  ctx.drawImage(img, fr.sx, fr.sy, fr.sw, fr.sh, 96, 104, 16, 16);
+  drawText(ctx, "× " + this.lives, 120, 108);
+  if (this.ds.features.luigi) {
+    // 角色选择
+    drawText(ctx, this.character === 0 ? ">MARIO" : " MARIO", 72, 152);
+    drawText(ctx, this.character === 1 ? ">LUIGI" : " LUIGI", 136, 152);
+    drawText(ctx, "UP/DOWN TO CHOOSE", 56, 176);
+  }
+};
+
+var VERSION_ENTRIES = [
+  { id: "smb1", title: "SUPER MARIO BROS.", sub: "1985 ORIGINAL 32 LEVELS", ok: true },
+  { id: "smb2j", title: "THE LOST LEVELS", sub: "1986 JAPAN ONLY SEQUEL", ok: true },
+  { id: "smb3", title: "SUPER MARIO BROS. 3", sub: "COMING SOON", ok: false },
+  { id: "smw", title: "SUPER MARIO WORLD", sub: "COMING SOON", ok: false },
+];
+
+Game.prototype.updateVersionSelect = function (inp, pin) {
+  if ((inp.down && !pin.down) || (inp.right && !pin.right)) {
+    this.menuIdx = Math.min(this.menuIdx + 1, VERSION_ENTRIES.length - 1);
+  }
+  if ((inp.up && !pin.up) || (inp.left && !pin.left)) {
+    this.menuIdx = Math.max(this.menuIdx - 1, 0);
+  }
+  if (inp.start && !pin.start) {
+    AudioSys.unlock();
+    var e = VERSION_ENTRIES[this.menuIdx];
+    if (e.ok) {
+      this.version = e.id;
+      this.ds = DATASETS[e.id];
+      this.state = ST.TITLE;
+    }
+  }
+};
+
+Game.prototype.renderVersionSelect = function (ctx) {
+  ctx.fillStyle = "#101018";
+  ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  drawText(ctx, "SELECT GAME", 92, 24);
+  // 标题装饰
+  var cf = COIN_FRAMES[(this.frame >> 3) % 4];
+  ctx.drawImage(this.images.tiles, cf[0] * 16, cf[1] * 16, 16, 16, 16, 18, 12, 12);
+  ctx.drawImage(this.images.tiles, cf[0] * 16, cf[1] * 16, 16, 16, 228, 18, 12, 12);
+  var y = 56;
+  for (var i = 0; i < VERSION_ENTRIES.length; i++) {
+    var e = VERSION_ENTRIES[i];
+    var sel = i === this.menuIdx;
+    if (sel) {
+      ctx.fillStyle = "#2a2a4a";
+      ctx.fillRect(16, y - 4, 224, 30);
+    }
+    // 光标
+    if (sel) {
+      var cf2 = COIN_FRAMES[(this.frame >> 3) % 4];
+      ctx.drawImage(this.images.tiles, cf2[0] * 16, cf2[1] * 16, 16, 16, 24, y + 2, 12, 12);
+    }
+    if (e.ok) {
+      drawText(ctx, e.title, 44, y);
+      drawText(ctx, e.sub, 44, y + 12);
+    } else {
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      drawText(ctx, e.title, 44, y);
+      drawText(ctx, e.sub, 44, y + 12);
+      ctx.restore();
+    }
+    y += 40;
+  }
+  drawText(ctx, "UP/DOWN SELECT  ENTER OK", 40, 220);
 };
 
 Game.prototype.renderTitle = function (ctx) {

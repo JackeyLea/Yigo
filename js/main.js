@@ -53,6 +53,25 @@
 
     // ---- 测试模式: ?t=1&w=世界&a=关卡&f=帧数&in=输入脚本&x=初始x ----
     var q = new URLSearchParams(location.search);
+    if (q.get("v") === "ll") {
+      if (typeof DATASETS === "undefined" || !DATASETS.smb2j) {
+        var c0 = canvas.getContext("2d");
+        c0.fillStyle = "#f00"; c0.fillRect(0, 0, 256, 240);
+        drawText(c0, "NO DATASETS", 60, 100);
+        return;
+      }
+      game.version = "smb2j"; game.ds = DATASETS.smb2j;
+      if (typeof game.ds.LEVEL_DATA === "undefined" || Object.keys(game.ds.LEVEL_DATA).length === 0) {
+        var c1 = canvas.getContext("2d");
+        c1.fillStyle = "#00f"; c1.fillRect(0, 0, 256, 240);
+        return;
+      }
+      if (!game.ds.art || Object.keys(game.ds.art).length === 0) {
+        var c2 = canvas.getContext("2d");
+        c2.fillStyle = "#0f0"; c2.fillRect(0, 0, 256, 240);
+        return;
+      }
+    }
     if (q.get("t")) {
       game.world = +(q.get("w") || 0);
       game.area = +(q.get("a") || 0);
@@ -67,6 +86,7 @@
       var jumps = [];
       var base = script.replace(/j@(\d+)/g, function (m, n) { jumps.push(+n); return ""; });
       if (q.get("big")) game.player.status = 1;
+      game.applyPhysics();
       if (q.get("fire")) game.player.status = 2;
       for (var i = 0; i < frames; i++) {
         // 脚本: r=右 l=左 j=跳(周期) s=跑 u=上 d=下
@@ -84,7 +104,7 @@
       }
       try { game.render(); } catch (e) { err = "render: " + e.message; }
       var p = game.player;
-      var info = "T " + (game.world+1) + "-" + (game.area+1) + " s=" + game.state + " x=" + Math.round(p.x) + " y=" + Math.round(p.py) +
+      var info = "T " + game.worldLabel() + "-" + (game.area+1) + " s=" + game.state + (game.level.wind ? " WIND" : "") + " x=" + Math.round(p.x) + " y=" + Math.round(p.py) +
         " sc=" + Math.round(game.scrollX) + " t=" + game.time + " st=" + p.status +
         " en=" + game.enemies.length + " g=" + p.onGround + " E:" + err;
       var ed = [];
