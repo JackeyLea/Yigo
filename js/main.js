@@ -7,6 +7,8 @@
   var canvas = document.getElementById("screen");
   var game = new Game(canvas);
   window.__game = game;
+  var aiBot = new AIBot(game);
+  window.__ai = aiBot;
 
   // 尺寸自适应(整数缩放)
   function resize() {
@@ -30,6 +32,17 @@
       AudioSys.enabled = !AudioSys.enabled;
       if (!AudioSys.enabled) AudioSys.stopMusic();
       else game.playAreaMusic && game.level && game.playAreaMusic();
+      ev.preventDefault();
+      return;
+    }
+    if (ev.code === "KeyN") {
+      aiBot.toggle();
+      ev.preventDefault();
+      return;
+    }
+    if (ev.code === "KeyB") {
+      aiBot.debug = !aiBot.debug;
+      console.log("[AI] Debug mode: " + aiBot.debug);
       ev.preventDefault();
       return;
     }
@@ -128,6 +141,8 @@
       var steps = 0;
       while (acc >= 1000 / 60 && steps < 6) {
         try {
+          // AI 自动更新 input
+          aiBot.update();
           game.update();
         } catch (e) {
           window.__errs.push("update: " + e.message + " " + (e.stack || "").split("\n")[1]);
@@ -139,6 +154,16 @@
       if (steps === 6) acc = 0;
       try {
         game.render();
+        // AI 状态显示
+        if (aiBot.enabled) {
+          var ctx = game.ctx;
+          ctx.fillStyle = "rgba(0,0,0,0.6)";
+          ctx.fillRect(0, 0, 256, 12);
+          ctx.fillStyle = "#0f0";
+          var report = aiBot.getReport();
+          var status = "AI W" + report.world + "-" + report.area + " S:" + report.score + " D:" + report.deaths;
+          drawText(ctx, status, 4, 2);
+        }
       } catch (e) {
         window.__errs.push("render: " + e.message + " " + (e.stack || "").split("\n")[1]);
         window.__errs.push("STOPPED");
