@@ -177,20 +177,37 @@ AIBot.prototype.handlePlaying = function (inp) {
 
   // 跳跃决策
   var needJump = false;
+  var jumpHeight = 12; // 默认跳跃高度（帧数）
 
   if (wallAhead.blocked && p.onGround && this.jumpCooldown === 0) {
-    needJump = true;
-    this.log("跳: 墙壁");
+    // 高障碍需要更早跳跃（距离 3-4 格时就开始）
+    if (wallAhead.tall) {
+      if (wallAhead.dist <= 4) {
+        needJump = true;
+        jumpHeight = 18;
+        this.log("跳: 高障碍 dist=" + wallAhead.dist + " h=" + wallAhead.height);
+      }
+    } else {
+      // 普通障碍距离 1-2 格时跳
+      if (wallAhead.dist <= 2) {
+        needJump = true;
+        this.log("跳: 墙壁 dist=" + wallAhead.dist);
+      }
+    }
   }
 
   if (gapInfo.hasGap && p.onGround && this.jumpCooldown === 0) {
     needJump = true;
     this.log("跳: 坑洞(" + gapInfo.gapWidth + "宽)");
-    if (gapInfo.gapWidth >= 3) inp.run = true;
+    if (gapInfo.gapWidth >= 3) {
+      inp.run = true;
+      jumpHeight = 16; // 大坑需要更高跳
+    }
   }
 
   if (stairAhead.needJump && p.onGround && this.jumpCooldown === 0) {
     needJump = true;
+    jumpHeight = 14;
     this.log("跳: 楼梯");
   }
 
@@ -207,7 +224,7 @@ AIBot.prototype.handlePlaying = function (inp) {
 
   if (needJump) {
     inp.jump = true;
-    this.jumpHoldFrames = 12;
+    this.jumpHoldFrames = jumpHeight;
     this.jumpCooldown = 8;
   }
 
@@ -225,10 +242,10 @@ AIBot.prototype.handlePlaying = function (inp) {
 
   if (this.stuckTimer > 45 && p.onGround && this.jumpCooldown === 0) {
     inp.jump = true;
-    this.jumpHoldFrames = 14;
+    this.jumpHoldFrames = 18; // 卡住时用最大跳跃高度
     this.jumpCooldown = 15;
     this.stuckTimer = 0;
-    this.log("卡住自救跳");
+    this.log("卡住自救跳(高)");
   }
 
   if (L.areaType === 0 && g.inWater && g.inWater(p)) {
@@ -249,12 +266,13 @@ AIBot.prototype.clearInput = function (inp) {
 
 // 检测前方墙壁/障碍
 AIBot.prototype.checkWall = function (p, L, playerCol, topRow, botRow) {
-  var result = { blocked: false, col: -1, height: 0, tall: false };
+  var result = { blocked: false, col: -1, height: 0, tall: false, dist: 99 };
 
-  // 检查前方 1-4 格
-  var checkCols = [playerCol + 1, playerCol + 2, playerCol + 3, playerCol + 4];
-  for (var ci = 0; ci < checkCols.length; ci++) {
-    var col = checkCols[ci];
+  // 检查前方 1-6 格（增加检测距离）
+  for (var d = 1; d <= 6; d++) {
+    var col = playerCol + d;
+    if (col < 0 || col >= L.width) continue;
+
     var obstacleHeight = 0;
 
     // 从玩家头顶到脚底检查
@@ -282,6 +300,7 @@ AIBot.prototype.checkWall = function (p, L, playerCol, topRow, botRow) {
       result.blocked = true;
       result.col = col;
       result.height = obstacleHeight;
+      result.dist = d;
       // 高度超过 2 格视为高障碍（如高水管）
       result.tall = obstacleHeight >= 3;
       return result;

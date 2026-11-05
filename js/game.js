@@ -964,6 +964,13 @@ Game.prototype.updatePlaying = function (inp, pin) {
 
   p.update(inp, pin);
   p.updateAnim();
+
+  // 掉进坑里检测
+  if (!p.dead && p.py > 240) {
+    this.killPlayer();
+    return;
+  }
+
   this.updateSpawns();
   this.updateEnemies();
   this.updateItems();
