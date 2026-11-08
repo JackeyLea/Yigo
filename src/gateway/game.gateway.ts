@@ -41,6 +41,7 @@ import { ConnectionManagerService } from './services/connection-manager.service'
 import { MessageRouterService } from './services/message-router.service';
 import { HeartbeatService } from './services/heartbeat.service';
 import { RoomService } from '../room/room.service';
+import { CleanupRegistry } from '../plugin/cleanup-registry';
 
 /** JWT Payload */
 interface JwtPayload {
@@ -83,6 +84,7 @@ export class GameGateway
     private readonly messageRouter: MessageRouterService,
     private readonly heartbeatService: HeartbeatService,
     private readonly roomService: RoomService,
+    private readonly cleanupRegistry: CleanupRegistry,
   ) {
     const keysDir = process.env.JWT_KEYS_DIR || './keys';
     this.publicKey = fs.readFileSync(
@@ -217,6 +219,11 @@ export class GameGateway
 
       // 移除连接映射
       await this.connectionManager.removeConnection(socketId);
+
+      // 清理该玩家的所有 EventBus 订阅和相关资源
+      if (userId) {
+        await this.cleanupRegistry.cleanupForPlayer(userId.toString());
+      }
 
       this.logger.log(`Client disconnected: socketId=${socketId}, userId=${userId}`);
     } catch (error) {

@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PluginSandbox } from './plugin-sandbox';
+import { PluginSandbox, PluginInstance } from './plugin-sandbox';
 import { EventBus } from './event-bus';
 import { PluginMeta } from './interfaces/plugin-meta.interface';
 import {
@@ -41,10 +41,10 @@ export interface LoadedPlugin {
  * 管理插件的完整生命周期：
  * 加载 → 启动 → 停止 → 卸载
  *
- * 支持：
- * - 动态 require/import 加载
- * - 插件热重载（先加载新版本→切换引用→卸载旧版本）
- * - 内存限制通过定期检查 process.memoryUsage() 实现
+ * 基于 Worker 线程架构，所有插件操作通过 MessagePort 异步通信：
+ * - 插件代码在独立 Worker 线程中运行（进程级隔离）
+ * - Worker 内使用 vm 模块做二次隔离（双重防护）
+ * - 支持插件热重载
  * - 所有操作记录审计日志
  */
 @Injectable()
@@ -67,7 +67,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     if (this.initialized) return;
     this.initialized = true;
-    this.logger.log('PluginLoaderService initialized');
+    this.logger.log('PluginLoaderService initialized (Worker thread mode)');
 
     // 启动时扫描插件目录
     await this.scanPluginDirectory();
@@ -75,7 +75,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     this.destroyed = true;
-    // 卸载所有插件
     const pluginIds = Array.from(this.plugins.keys());
     for (const pluginId of pluginIds) {
       try {
@@ -92,9 +91,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
   // ==================== 插件目录扫描 ====================
 
-  /**
-   * 扫描插件目录，自动加载有效的插件
-   */
   private async scanPluginDirectory(): Promise<void> {
     const pluginDir = this.getPluginDirectory();
     if (!fs.existsSync(pluginDir)) {
@@ -130,8 +126,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
   // ==================== 核心生命周期方法 ====================
 
   /**
-   * 加载插件
-   * 生命周期阶段：加载 (load)
+   * 加载插件到 Worker 沙箱中
    */
   async loadPlugin(pluginPath: string): Promise<PluginMeta> {
     if (this.destroyed) {
@@ -146,10 +141,8 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException(`Plugin file not found: ${resolvedPath}`);
     }
 
-    // 读取 plugin.json 元数据
     const meta = await this.readPluginMeta(resolvedPath);
 
-    // 检查是否已加载
     if (this.plugins.has(meta.pluginId)) {
       throw new BadRequestException(
         `Plugin "${meta.pluginId}" is already loaded`,
@@ -157,7 +150,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      // 加载到沙箱
+      // 加载到 Worker 沙箱
       await this.sandbox.load(resolvedPath, meta);
 
       const loadedPlugin: LoadedPlugin = {
@@ -172,7 +165,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
       this.logAudit('LOAD', meta.pluginId, `Loaded from ${resolvedPath}`, true);
       this.logger.log(
-        `Plugin "${meta.name}" (${meta.pluginId} v${meta.version}) loaded successfully`,
+        `Plugin "${meta.name}" (${meta.pluginId} v${meta.version}) loaded successfully (Worker sandbox)`,
       );
 
       return meta;
@@ -189,7 +182,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 卸载插件
-   * 生命周期阶段：停止 (stop) → 卸载 (unload)
    */
   async unloadPlugin(pluginId: string): Promise<void> {
     if (this.destroyed) {
@@ -206,23 +198,11 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
     plugin.status = 'unloading';
 
     try {
-      // 停止插件（如果正在运行）
+      // 通过 Worker 调用 onStop（如果存在）
       const instance = this.sandbox.getInstance(pluginId);
-      if (
-        instance &&
-        instance.exports &&
-        typeof instance.exports.onStop === 'function'
-      ) {
+      if (instance) {
         try {
-          const result = instance.exports.onStop();
-          if (result instanceof Promise) {
-            await Promise.race([
-              result,
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Stop timeout')), 5000),
-              ),
-            ]);
-          }
+          await this.callPluginExport(pluginId, 'onStop', [], 5000);
         } catch (stopErr: any) {
           this.logger.warn(
             `Plugin ${pluginId} onStop error: ${stopErr.message}`,
@@ -230,7 +210,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      // 从沙箱卸载
+      // 从沙箱卸载（Worker 会被释放回池中）
       await this.sandbox.unload(pluginId);
       this.plugins.delete(pluginId);
 
@@ -264,9 +244,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
     this.logAudit('RELOAD', pluginId, 'Starting hot reload...', true);
 
-    // 备份旧插件信息
     const oldPluginPath = oldPlugin.pluginPath;
-    const tempId = `${pluginId}_old_${Date.now()}`;
 
     try {
       oldPlugin.status = 'reloading';
@@ -279,36 +257,21 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       await this.sandbox.load(oldPluginPath, tempMeta);
 
       // 停止旧版本
-      const oldInstance = this.sandbox.getInstance(pluginId);
-      if (
-        oldInstance &&
-        oldInstance.exports &&
-        typeof oldInstance.exports.onStop === 'function'
-      ) {
-        try {
-          const result = oldInstance.exports.onStop();
-          if (result instanceof Promise) {
-            await Promise.race([
-              result,
-              new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Stop timeout')), 5000),
-              ),
-            ]);
-          }
-        } catch (stopErr: any) {
-          this.logger.warn(
-            `Old plugin ${pluginId} onStop error: ${stopErr.message}`,
-          );
-        }
+      try {
+        await this.callPluginExport(pluginId, 'onStop', [], 5000);
+      } catch (stopErr: any) {
+        this.logger.warn(
+          `Old plugin ${pluginId} onStop error: ${stopErr.message}`,
+        );
       }
 
-      // 切换：卸载旧版本
+      // 卸载旧版本
       await this.sandbox.unload(pluginId);
       this.plugins.delete(pluginId);
 
-      // 切换：重新用正确 ID 加载新版本
+      // 卸载临时版本，然后重新加载为正式版本
       await this.sandbox.unload(tempMeta.pluginId);
-      const finalMeta = await this.sandbox.load(oldPluginPath, newMeta);
+      await this.sandbox.load(oldPluginPath, newMeta);
 
       const loadedPlugin: LoadedPlugin = {
         meta: newMeta,
@@ -321,21 +284,14 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       this.sandbox.setStatus(pluginId, 'loaded');
 
       // 启动新版本
-      const newInstance = this.sandbox.getInstance(pluginId);
-      if (
-        newInstance &&
-        newInstance.exports &&
-        typeof newInstance.exports.onStart === 'function'
-      ) {
-        try {
-          newInstance.exports.onStart();
-          this.sandbox.setStatus(pluginId, 'running');
-        } catch (startErr: any) {
-          this.logger.warn(
-            `Reloaded plugin ${pluginId} onStart error: ${startErr.message}`,
-          );
-          this.sandbox.setStatus(pluginId, 'error');
-        }
+      try {
+        await this.callPluginExport(pluginId, 'onStart', [], 5000);
+        this.sandbox.setStatus(pluginId, 'running');
+      } catch (startErr: any) {
+        this.logger.warn(
+          `Reloaded plugin ${pluginId} onStart error: ${startErr.message}`,
+        );
+        this.sandbox.setStatus(pluginId, 'error');
       }
 
       this.logAudit('RELOAD', pluginId, 'Hot reload completed', true);
@@ -343,7 +299,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
       return newMeta;
     } catch (err: any) {
-      // 回滚：如果旧版本还在，恢复状态
       if (this.plugins.has(pluginId)) {
         const plugin = this.plugins.get(pluginId)!;
         plugin.status = 'error';
@@ -359,7 +314,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 启动插件
-   * 生命周期阶段：启动 (start)
    */
   async startPlugin(pluginId: string): Promise<void> {
     const instance = this.sandbox.getInstance(pluginId);
@@ -367,55 +321,31 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException(`Plugin "${pluginId}" is not loaded`);
     }
 
-    if (
-      instance.exports &&
-      typeof instance.exports.onStart === 'function'
-    ) {
-      try {
-        const result = instance.exports.onStart();
-        if (result instanceof Promise) {
-          await Promise.race([
-            result,
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Start timeout')), 10000),
-            ),
-          ]);
-        }
-        this.sandbox.setStatus(pluginId, 'running');
-        this.logAudit('START', pluginId, 'Plugin started', true);
-      } catch (err: any) {
-        this.sandbox.setStatus(pluginId, 'error');
-        this.logAudit('START', pluginId, `Failed: ${err.message}`, false);
-        throw new InternalServerErrorException(
-          `Failed to start plugin "${pluginId}": ${err.message}`,
-        );
-      }
-    } else {
+    try {
+      await this.callPluginExport(pluginId, 'onStart', [], 10000);
       this.sandbox.setStatus(pluginId, 'running');
+      this.logAudit('START', pluginId, 'Plugin started', true);
+    } catch (err: any) {
+      this.sandbox.setStatus(pluginId, 'error');
+      this.logAudit('START', pluginId, `Failed: ${err.message}`, false);
+      throw new InternalServerErrorException(
+        `Failed to start plugin "${pluginId}": ${err.message}`,
+      );
     }
   }
 
   // ==================== 查询方法 ====================
 
-  /**
-   * 获取所有已加载的插件元数据
-   */
   getLoadedPlugins(): PluginMeta[] {
     return Array.from(this.plugins.values())
       .filter((p) => p.status === 'active')
       .map((p) => p.meta);
   }
 
-  /**
-   * 获取指定插件的元数据
-   */
   getPlugin(pluginId: string): PluginMeta | undefined {
     return this.plugins.get(pluginId)?.meta;
   }
 
-  /**
-   * 获取插件加载信息
-   */
   getLoadedPlugin(pluginId: string): LoadedPlugin | undefined {
     return this.plugins.get(pluginId);
   }
@@ -424,6 +354,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 创建游戏控制器
+   * 通过 Worker 消息在沙箱内实例化，返回代理对象
    */
   async createGameController(
     pluginId: string,
@@ -431,9 +362,7 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
   ): Promise<GameController> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) {
-      throw new NotFoundException(
-        `Plugin "${pluginId}" is not loaded`,
-      );
+      throw new NotFoundException(`Plugin "${pluginId}" is not loaded`);
     }
 
     const instance = this.sandbox.getInstance(pluginId);
@@ -448,70 +377,29 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       await this.startPlugin(pluginId);
     }
 
-    // 创建 EventBus
-    const eventBus = new EventBus();
-
-    // 创建框架上下文
-    const frameworkContext = this.sandbox.createFrameworkContext(
+    // 通过 Worker 创建 GameController
+    const result = await this.sendWorkerMessage(instance, {
+      type: 'CREATE_GAME_CONTROLLER',
       pluginId,
-      roomConfig.roomId,
-      roomConfig.config || {},
-      eventBus,
-    );
+      roomConfig,
+    }, 10000);
 
-    // 如果插件导出了 createGameController 工厂函数，使用它
-    if (
-      instance.exports &&
-      typeof instance.exports.createGameController === 'function'
-    ) {
-      try {
-        const controller = instance.exports.createGameController(
-          frameworkContext,
-          roomConfig,
-        );
-
-        if (controller && this.isValidGameController(controller)) {
-          this.logAudit(
-            'CREATE_CONTROLLER',
-            pluginId,
-            `GameController created for room ${roomConfig.roomId}`,
-            true,
-          );
-          return controller as GameController;
-        }
-      } catch (err: any) {
-        throw new InternalServerErrorException(
-          `Failed to create GameController: ${err.message}`,
-        );
-      }
+    if (!result.success) {
+      throw new InternalServerErrorException(
+        `Failed to create GameController: ${result.error}`,
+      );
     }
 
-    // 如果插件导出了 entry class，实例化它
-    if (instance.exports && instance.meta.entryClass) {
-      const EntryClass = instance.exports[instance.meta.entryClass];
-      if (typeof EntryClass === 'function') {
-        try {
-          const entryInstance = new EntryClass(frameworkContext, roomConfig);
-          if (this.isValidGameController(entryInstance)) {
-            this.logAudit(
-              'CREATE_CONTROLLER',
-              pluginId,
-              `GameController created via entry class for room ${roomConfig.roomId}`,
-              true,
-            );
-            return entryInstance as GameController;
-          }
-        } catch (err: any) {
-          throw new InternalServerErrorException(
-            `Failed to instantiate entry class: ${err.message}`,
-          );
-        }
-      }
-    }
-
-    throw new BadRequestException(
-      `Plugin "${pluginId}" does not export a valid GameController`,
+    instance.gameControllerCreated = true;
+    this.logAudit(
+      'CREATE_CONTROLLER',
+      pluginId,
+      `GameController created for room ${roomConfig.roomId}`,
+      true,
     );
+
+    // 返回代理对象（所有调用通过 MessagePort 转发）
+    return this.sandbox.createGameController(pluginId, roomConfig);
   }
 
   /**
@@ -520,13 +408,11 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
   async createAIController(
     pluginId: string,
     difficulty: string,
-    gameController: GameController,
+    _gameController: GameController,
   ): Promise<AIController> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) {
-      throw new NotFoundException(
-        `Plugin "${pluginId}" is not loaded`,
-      );
+      throw new NotFoundException(`Plugin "${pluginId}" is not loaded`);
     }
 
     const instance = this.sandbox.getInstance(pluginId);
@@ -536,69 +422,60 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    // 如果插件导出了 createAIController 工厂函数，使用它
-    if (
-      instance.exports &&
-      typeof instance.exports.createAIController === 'function'
-    ) {
-      try {
-        const controller = instance.exports.createAIController(
-          difficulty,
-          gameController,
-        );
+    // 通过 Worker 创建 AIController
+    const result = await this.sendWorkerMessage(instance, {
+      type: 'CREATE_AI_CONTROLLER',
+      pluginId,
+      difficulty,
+    }, 10000);
 
-        if (controller && this.isValidAIController(controller)) {
-          this.logAudit(
-            'CREATE_AI',
-            pluginId,
-            `AIController created with difficulty ${difficulty}`,
-            true,
-          );
-          return controller as AIController;
-        }
-      } catch (err: any) {
-        throw new InternalServerErrorException(
-          `Failed to create AIController: ${err.message}`,
-        );
-      }
+    if (!result.success) {
+      throw new InternalServerErrorException(
+        `Failed to create AIController: ${result.error}`,
+      );
     }
 
-    // 如果插件导出了 AI 相关的类
-    if (instance.exports) {
-      const aiClassNames = ['AIController', 'GameAI', 'PluginAI'];
-      for (const className of aiClassNames) {
-        const AIClass = instance.exports[className];
-        if (typeof AIClass === 'function') {
-          try {
-            const aiInstance = new AIClass(difficulty, gameController);
-            if (this.isValidAIController(aiInstance)) {
-              this.logAudit(
-                'CREATE_AI',
-                pluginId,
-                `AIController created via ${className}`,
-                true,
-              );
-              return aiInstance as AIController;
-            }
-          } catch (err: any) {
-            this.logger.warn(
-              `Failed to instantiate AI class ${className}: ${err.message}`,
-            );
-          }
-        }
-      }
-    }
-
-    throw new BadRequestException(
-      `Plugin "${pluginId}" does not export a valid AIController`,
+    instance.aiControllerCreated = true;
+    this.logAudit(
+      'CREATE_AI',
+      pluginId,
+      `AIController created with difficulty ${difficulty}`,
+      true,
     );
+
+    return this.sandbox.createAIController(pluginId, difficulty);
+  }
+
+  // ==================== Worker 通信辅助 ====================
+
+  /**
+   * 调用插件导出方法（通过 Worker MessagePort）
+   */
+  private async callPluginExport(
+    pluginId: string,
+    methodName: string,
+    args: any[] = [],
+    timeoutMs: number = 5000,
+  ): Promise<any> {
+    return this.sandbox.callPluginExport(pluginId, methodName, args, timeoutMs);
+  }
+
+  /**
+   * 发送消息到 Worker（通过 PluginSandbox 的 MessagePort）
+   */
+  private async sendWorkerMessage(
+    instance: PluginInstance,
+    message: any,
+    timeoutMs: number,
+  ): Promise<any> {
+    return this.sandbox.sendPortMessage(instance.port, {
+      ...message,
+      requestId: this.sandbox.generateRequestId(),
+    }, timeoutMs);
   }
 
   // ==================== 审计日志 ====================
 
-  /**
-   * 获取审计日志
-   */
   getAuditLog(
     pluginId?: string,
     limit = 100,
@@ -623,16 +500,13 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
     const metaPath = path.join(dir, 'plugin.json');
 
     if (!fs.existsSync(metaPath)) {
-      throw new NotFoundException(
-        `Plugin metadata not found: ${metaPath}`,
-      );
+      throw new NotFoundException(`Plugin metadata not found: ${metaPath}`);
     }
 
     try {
       const content = fs.readFileSync(metaPath, 'utf-8');
       const raw = JSON.parse(content);
 
-      // 基本验证
       if (!raw.pluginId || !raw.name || !raw.version) {
         throw new BadRequestException(
           'Plugin metadata missing required fields: pluginId, name, version',
@@ -655,7 +529,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
         errorDefinitions: raw.errorDefinitions || raw.error_definitions,
       };
 
-      // 验证 category
       if (!['board', 'card', 'mahjong'].includes(meta.category)) {
         meta.category = 'board';
       }
@@ -663,32 +536,12 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       return meta;
     } catch (err: any) {
       if (err instanceof BadRequestException) throw err;
-      throw new BadRequestException(
-        `Invalid plugin metadata: ${err.message}`,
-      );
+      throw new BadRequestException(`Invalid plugin metadata: ${err.message}`);
     }
   }
 
   private getPluginDirectory(): string {
-    return (
-      process.env.PLUGIN_DIR || path.resolve(process.cwd(), 'plugins')
-    );
-  }
-
-  private isValidGameController(obj: any): boolean {
-    return (
-      obj &&
-      typeof obj.start === 'function' &&
-      typeof obj.getCurrentState === 'function' &&
-      typeof obj.getActivePlayer === 'function' &&
-      typeof obj.submitAction === 'function' &&
-      typeof obj.getLegalActions === 'function' &&
-      typeof obj.endGame === 'function'
-    );
-  }
-
-  private isValidAIController(obj: any): boolean {
-    return obj && typeof obj.requestAction === 'function';
+    return process.env.PLUGIN_DIR || path.resolve(process.cwd(), 'plugins');
   }
 
   private logAudit(
@@ -705,7 +558,6 @@ export class PluginLoaderService implements OnModuleInit, OnModuleDestroy {
       success,
     });
 
-    // 限制日志数量
     if (this.auditLog.length > this.maxAuditLogEntries) {
       this.auditLog.splice(0, this.auditLog.length - this.maxAuditLogEntries);
     }

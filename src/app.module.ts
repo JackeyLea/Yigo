@@ -20,6 +20,10 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { PluginModule } from './plugin/plugin.module';
 import { HealthModule } from './health/health.module';
 import { WalletModule } from './wallet/wallet.module';
+import { EscrowModule } from './core/escrow/escrow.module';
+import { PenaltyModule } from './core/penalty/penalty.module';
+import { CollectionModule } from './core/collection/collection.module';
+import { SyncModule } from './sync/sync.module';
 
 @Module({
   imports: [
@@ -54,6 +58,10 @@ import { WalletModule } from './wallet/wallet.module';
     PluginModule,
     HealthModule,
     WalletModule,
+    EscrowModule,
+    PenaltyModule,
+    CollectionModule,
+    SyncModule,
   ],
 })
 export class AppModule {}

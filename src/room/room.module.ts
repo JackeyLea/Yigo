@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RoomController } from './room.controller';
@@ -10,12 +10,15 @@ import { RoomPlayerGuard } from './guards/room-player.guard';
 import { Room } from '../common/entities/room.entity';
 import { RoomPlayer } from '../common/entities/room-player.entity';
 import { User } from '../common/entities/user.entity';
-import { EventBus } from '../plugin/event-bus';
+import { PluginModule } from '../plugin/plugin.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Room, RoomPlayer, User])],
+  imports: [
+    TypeOrmModule.forFeature([Room, RoomPlayer, User]),
+    forwardRef(() => PluginModule),
+  ],
   controllers: [RoomController],
-  providers: [RoomService, RoomStateMachine, RoomHostGuard, RoomPlayerGuard, EventBus],
+  providers: [RoomService, RoomStateMachine, RoomHostGuard, RoomPlayerGuard],
   exports: [RoomService, RoomStateMachine, RoomHostGuard, RoomPlayerGuard],
 })
 export class RoomModule {}

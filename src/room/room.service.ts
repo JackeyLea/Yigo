@@ -23,6 +23,7 @@ import { Room, RoomStatus, RoomMode } from '../common/entities/room.entity';
 import { RoomPlayer } from '../common/entities/room-player.entity';
 import { User } from '../common/entities/user.entity';
 import { EventBus } from '../plugin/event-bus';
+import { CleanupRegistry } from '../plugin/cleanup-registry';
 import {
   RoomStateMachine,
   RoomEvent,
@@ -73,6 +74,7 @@ export class RoomService {
     private readonly configService: ConfigService,
     private readonly dataSource: DataSource,
     private readonly eventBus: EventBus,
+    private readonly cleanupRegistry: CleanupRegistry,
   ) {
     // 初始化Redis连接
     const redisConfig = this.configService.get('redis');
@@ -694,6 +696,13 @@ export class RoomService {
     }
 
     await this.dissolveRoomInternal(roomId);
+
+    // 清理该房间的所有 EventBus 订阅（房间相关事件 + 玩家在该房间的事件）
+    await this.cleanupRegistry.cleanupForRoom(roomId);
+    this.eventBus.cleanupForPattern(`room:${roomId}:**`);
+    this.eventBus.cleanupForPattern(`room:${roomId}:*`);
+
+    this.logger.log(`Room ${roomId} dissolved and all related subscriptions cleaned`);
   }
 
   private async dissolveRoomInternal(roomId: string): Promise<void> {
