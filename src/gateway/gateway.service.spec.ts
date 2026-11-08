@@ -21,6 +21,8 @@ import { ConnectionManagerService } from './services/connection-manager.service'
 import { MessageRouterService } from './services/message-router.service';
 import { HeartbeatService } from './services/heartbeat.service';
 import { RoomService } from '../room/room.service';
+import { CleanupRegistry } from '../plugin/cleanup-registry';
+import { RoomResponseDto } from '../room/dto';
 import { WS_EVENTS } from './dto/ws-events';
 
 // ===== Mock 数据 =====
@@ -31,7 +33,7 @@ const MOCK_USER = {
   nickname: 'Test User',
 };
 
-const MOCK_ROOM = {
+const MOCK_ROOM: RoomResponseDto = {
   roomId: 'ABC123',
   gameType: 'chess',
   pluginId: 'chess',
@@ -44,6 +46,7 @@ const MOCK_ROOM = {
       userId: 1,
       username: 'testuser',
       nickname: 'Test User',
+      avatarUrl: '',
       seatIndex: 0,
       isReady: true,
       isHost: true,
@@ -114,6 +117,7 @@ describe('GatewayModule', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GameGateway,
+        CleanupRegistry,
         {
           provide: ConfigService,
           useValue: {
@@ -548,6 +552,7 @@ describe('GatewayModule', () => {
             userId: 2,
             username: 'player2',
             nickname: 'Player 2',
+            avatarUrl: '',
             seatIndex: 1,
             isReady: false,
             isHost: false,

@@ -11,7 +11,6 @@
  * - 记谱格式转换
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { GomokuEngine } from './gomoku.engine';
 
 describe('GomokuEngine', () => {
@@ -183,6 +182,7 @@ describe('GomokuEngine', () => {
     });
 
     it('白方获胜应正确判定', () => {
+      // 注意：黑方干扰子不能在 x=0 列连成 5 子（否则黑方先胜）
       engine.makeMove(0, 0); // 黑
       engine.makeMove(3, 7); // 白
       engine.makeMove(0, 1); // 黑
@@ -191,7 +191,7 @@ describe('GomokuEngine', () => {
       engine.makeMove(5, 7); // 白
       engine.makeMove(0, 3); // 黑
       engine.makeMove(6, 7); // 白
-      engine.makeMove(0, 4); // 黑
+      engine.makeMove(14, 14); // 黑（第5枚干扰子避开 x=0 列，防止黑方五连）
       engine.makeMove(7, 7); // 白 — 五连！
       const state = engine.getState();
 
@@ -218,16 +218,28 @@ describe('GomokuEngine', () => {
   describe('和棋判定', () => {
     it('应在棋盘满时判定和棋', () => {
       const engine = new GomokuEngine(15, false);
-      let moveCount = 0;
+      const size = 15;
 
-      // 填满整个棋盘（不形成五连）
-      for (let y = 0; y < 15; y++) {
-        for (let x = 0; x < 15; x++) {
-          if (moveCount >= 15 * 15) break;
-          engine.makeMove(x, y);
-          moveCount++;
+      // 目标着色：((x + 2*y) mod 4) < 2 为黑，其余为白。
+      // 该模式在横、竖、两条对角线方向上的最长同色连子均为 2，
+      // 可保证填满后（以及落子过程中的任意时刻）不形成五连。
+      // 黑格共 113 个 = 黑方步数（第 1,3,...,225 步），白格 112 个，与行棋顺序天然匹配。
+      const isBlackCell = (x: number, y: number) => (x + 2 * y) % 4 < 2;
+      const blackCells: Array<{ x: number; y: number }> = [];
+      const whiteCells: Array<{ x: number; y: number }> = [];
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          (isBlackCell(x, y) ? blackCells : whiteCells).push({ x, y });
         }
       }
+
+      // 交替落子：奇数步执黑落黑格，偶数步执白落白格，最后第 225 步（黑）落最后一个黑格
+      for (let i = 0; i < whiteCells.length; i++) {
+        expect(engine.makeMove(blackCells[i].x, blackCells[i].y)).toBe(true);
+        expect(engine.makeMove(whiteCells[i].x, whiteCells[i].y)).toBe(true);
+      }
+      const last = blackCells[blackCells.length - 1];
+      expect(engine.makeMove(last.x, last.y)).toBe(true);
 
       const state = engine.getState();
       expect(state.moveCount).toBe(225);

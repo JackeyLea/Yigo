@@ -28,7 +28,8 @@ import {
   UnlockedAchievement,
   GameEvent,
 } from './interfaces';
-import { Achievement, UserAchievement } from '../common/entities/achievement.entity';
+import { Achievement } from '../common/entities/achievement.entity';
+import { UserAchievement } from '../common/entities/user-achievement.entity';
 
 /**
  * 用户请求对象接口
@@ -70,7 +71,7 @@ interface CheckAchievementDto {
   event: GameEvent;
 }
 
-@Controller('api/v1/achievements')
+@Controller('achievements')
 export class AchievementController {
   constructor(private readonly achievementService: AchievementService) {}
 

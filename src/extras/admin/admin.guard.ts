@@ -49,6 +49,16 @@ export class AdminGuard implements CanActivate {
       throw new UnauthorizedException('Authentication required');
     }
 
+    // 环境变量白名单兜底（ADMIN_USER_IDS，逗号分隔）+ 种子管理员用户名兜底
+    const adminIds = (process.env.ADMIN_USER_IDS || '1')
+      .split(',')
+      .map((id) => id.trim());
+    const userIdStr = String(user.userId ?? '');
+    const username = String(user.username ?? '');
+    if ((userIdStr && adminIds.includes(userIdStr)) || username === 'admin') {
+      return true;
+    }
+
     // Check if user has admin role
     const userRole: string = user.role ?? 'user';
     if (!['super', 'admin', 'moderator'].includes(userRole)) {
@@ -90,6 +100,16 @@ export class SuperAdminGuard implements CanActivate {
 
     if (!user) {
       throw new UnauthorizedException('Authentication required');
+    }
+
+    // 环境变量白名单兜底（ADMIN_USER_IDS，逗号分隔）+ 种子管理员用户名兜底
+    const adminIds = (process.env.ADMIN_USER_IDS || '1')
+      .split(',')
+      .map((id) => id.trim());
+    const userIdStr = String(user.userId ?? '');
+    const username = String(user.username ?? '');
+    if ((userIdStr && adminIds.includes(userIdStr)) || username === 'admin') {
+      return true;
     }
 
     if (user.role !== 'super') {

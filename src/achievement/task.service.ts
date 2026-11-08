@@ -477,8 +477,8 @@ export class TaskService {
         : this.defaultWeeklyTasks;
 
     // 将默认任务保存到数据库以便后续使用
-    const newDefinitions = defaults.map((d) =>
-      this.taskDefinitionRepository.create(d as any),
+    const newDefinitions = defaults.map(
+      (d) => this.taskDefinitionRepository.create(d as TaskDefinition),
     );
 
     return this.taskDefinitionRepository.save(newDefinitions);

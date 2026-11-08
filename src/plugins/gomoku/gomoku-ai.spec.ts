@@ -9,9 +9,8 @@
  * - 开局库使用
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { GomokuAI } from './gomoku-ai';
-import type { GomokuState, Board } from './gomoku.types';
+import type { GomokuState, Board, BoardSize } from './gomoku.types';
 import { GomokuEngine } from './gomoku.engine';
 
 /** 辅助函数：从引擎创建状态 */
@@ -61,9 +60,19 @@ describe('GomokuAI', () => {
 
       const move = ai.getMove(state);
 
-      // AI应选择 x=7 完成五连
-      expect(move.x).toBe(7);
+      // 活四两端 x=2 / x=7 均为必胜点（都能完成五连），AI 任选其一即算直接获胜
+      expect([2, 7]).toContain(move.x);
       expect(move.y).toBe(7);
+
+      // 验证该落子确实形成五连（直接获胜）
+      state.board[move.y][move.x] = 1;
+      let maxRun = 0;
+      let run = 0;
+      for (let x = 0; x < 15; x++) {
+        run = state.board[7][x] === 1 ? run + 1 : 0;
+        maxRun = Math.max(maxRun, run);
+      }
+      expect(maxRun).toBeGreaterThanOrEqual(5);
     });
 
     it('应在有竖向活四时直接获胜', () => {
@@ -261,7 +270,7 @@ describe('GomokuAI', () => {
   describe('边界情况', () => {
     it('应在棋盘只剩一个空位时选择该位', () => {
       const ai = new GomokuAI('medium');
-      const engine = new GomokuEngine(5, false); // 用小棋盘加速测试
+      const engine = new GomokuEngine(5 as unknown as BoardSize, false); // 用小棋盘加速测试
       const state = createStateFromEngine(engine);
 
       // 填满除 (4,4) 外的所有位置

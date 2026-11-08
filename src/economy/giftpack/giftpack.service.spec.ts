@@ -110,7 +110,8 @@ describe('GiftpackService', () => {
         return null;
       });
 
-      await expect(service.purchasePack(1, 'newbie_pack')).rejects.toThrow('已达到购买次数上限');
+      // checkPurchaseable/isPackAvailable 在达到限购时返回false，purchasePack统一抛出"礼包暂不可购买"
+      await expect(service.purchasePack(1, 'newbie_pack')).rejects.toThrow('礼包暂不可购买');
     });
   });
 
@@ -140,7 +141,8 @@ describe('GiftpackService', () => {
         return null;
       });
 
-      await expect(service.claimFreePack(1, 'newbie_pack')).rejects.toThrow('暂不可购买');
+      // checkPurchaseable返回false时，claimFreePack抛出"今日已领取，请明日再来"
+      await expect(service.claimFreePack(1, 'newbie_pack')).rejects.toThrow('今日已领取，请明日再来');
     });
   });
 

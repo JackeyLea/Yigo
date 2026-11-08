@@ -112,7 +112,11 @@ export class AnalyticsService {
     };
 
     // 写入Redis Stream（实时事件流）
-    await this.redis.xadd('analytics:events', '*', event);
+    await this.redis.xadd(
+      'analytics:events',
+      '*',
+      ...Object.entries(event).flat(),
+    );
 
     // 更新HyperLogLog统计（DAU）
     const today = new Date().toISOString().split('T')[0];

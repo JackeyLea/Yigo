@@ -224,7 +224,7 @@ describe('EloCalculator', () => {
         calculator.calculateMultiplayerRating([
           { userId: 1, rating: 1500, gamesPlayed: 50, rank: 1 },
         ]),
-      ).toThrow('At least 2 players');
+      ).toThrow('Multiplayer rating update requires at least 2 players');
     });
 
     it('应返回所有玩家的结果', () => {

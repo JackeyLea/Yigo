@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
+import { getRedisToken } from '@liaoliaots/nestjs-redis';
 import { AnalyticsService, RetentionData, HourlyStats, ConversionStats, FunnelData, DashboardStats } from './analytics.service';
 import { AnalyticsEvent, EventType, RetentionCohort, CohortType, UserLtv, DailyStats } from './entities';
 
@@ -16,32 +17,41 @@ type MockRepository<T> = {
   update: jest.Mock;
 };
 
-const createMockRepository = <T>(): MockRepository<T> => ({
-  findOne: jest.fn(),
-  find: jest.fn(),
-  findAndCount: jest.fn(),
-  count: jest.fn(),
-  create: jest.fn(),
-  save: jest.fn(),
-  remove: jest.fn(),
-  createQueryBuilder: jest.fn(() => ({
-    select: jest.fn().mockReturnThis(),
-    addSelect: jest.fn().mockReturnThis(),
-    where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
-    groupBy: jest.fn().mockReturnThis(),
-    orderBy: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockReturnThis(),
-    getRawOne: jest.fn(),
-    getRawMany: jest.fn(),
-    getMany: jest.fn(),
-    insert: jest.fn().mockReturnThis(),
-    into: jest.fn().mockReturnThis(),
-    values: jest.fn().mockReturnThis(),
-    execute: jest.fn(),
-  })),
-  update: jest.fn(),
+const createMockQueryBuilder = () => ({
+  select: jest.fn().mockReturnThis(),
+  addSelect: jest.fn().mockReturnThis(),
+  where: jest.fn().mockReturnThis(),
+  andWhere: jest.fn().mockReturnThis(),
+  orWhere: jest.fn().mockReturnThis(),
+  groupBy: jest.fn().mockReturnThis(),
+  having: jest.fn().mockReturnThis(),
+  orderBy: jest.fn().mockReturnThis(),
+  addOrderBy: jest.fn().mockReturnThis(),
+  limit: jest.fn().mockReturnThis(),
+  getRawOne: jest.fn(),
+  getRawMany: jest.fn(),
+  getMany: jest.fn(),
+  insert: jest.fn().mockReturnThis(),
+  into: jest.fn().mockReturnThis(),
+  values: jest.fn().mockReturnThis(),
+  execute: jest.fn(),
 });
+
+const createMockRepository = <T>(): MockRepository<T> => {
+  // 共享同一个 queryBuilder 实例：测试中捕获的实例与被测服务内部拿到的是同一个对象
+  const queryBuilder = createMockQueryBuilder();
+  return {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    findAndCount: jest.fn(),
+    count: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    remove: jest.fn(),
+    createQueryBuilder: jest.fn(() => queryBuilder),
+    update: jest.fn(),
+  };
+};
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -60,7 +70,7 @@ describe('AnalyticsService', () => {
         { provide: getRepositoryToken(UserLtv), useValue: createMockRepository<UserLtv>() },
         { provide: getRepositoryToken(DailyStats), useValue: createMockRepository<DailyStats>() },
         {
-          provide: 'default_IORedisModuleConnectionToken',
+          provide: getRedisToken('default'),
           useValue: {
             pfadd: jest.fn().mockResolvedValue(1),
             pfcount: jest.fn().mockResolvedValue(0),
@@ -93,7 +103,7 @@ describe('AnalyticsService', () => {
     cohortRepo = module.get(getRepositoryToken(RetentionCohort));
     ltvRepo = module.get(getRepositoryToken(UserLtv));
     dailyStatsRepo = module.get(getRepositoryToken(DailyStats));
-    redis = module.get('default_IORedisModuleConnectionToken');
+    redis = module.get(getRedisToken('default'));
   });
 
   afterEach(() => {
@@ -104,13 +114,18 @@ describe('AnalyticsService', () => {
     it('should track event and update DAU/MAU', async () => {
       await service.trackEvent(1, EventType.LOGIN, { source: 'mobile' });
 
+      // Redis Stream 的 xadd 使用扁平化的 field/value 参数形式
       expect(redis.xadd).toHaveBeenCalledWith(
         'analytics:events',
         '*',
-        expect.objectContaining({
-          userId: '1',
-          eventType: 'login',
-        }),
+        'userId', '1',
+        'eventType', EventType.LOGIN,
+        'eventData', '{"source":"mobile"}',
+        'gameType', '',
+        'sessionId', '0',
+        'ipAddress', '',
+        'country', '',
+        'timestamp', expect.any(String),
       );
       expect(redis.pfadd).toHaveBeenCalledWith(
         expect.stringMatching(/dau:\d{4}-\d{2}-\d{2}/),
@@ -124,7 +139,8 @@ describe('AnalyticsService', () => {
 
     it('should handle purchase events and update LTV', async () => {
       ltvRepo.findOne = jest.fn().mockResolvedValue(null);
-      ltvRepo.create = jest.fn().mockReturnValue({ userId: 1 });
+      // create 需要回传入参（与 TypeORM Repository.create 行为一致）
+      ltvRepo.create = jest.fn().mockImplementation((data) => data);
       ltvRepo.save = jest.fn().mockResolvedValue({});
 
       await service.trackEvent(1, EventType.PURCHASE, { amount: '99.99', productId: 'coins_1000' });
@@ -275,8 +291,8 @@ describe('AnalyticsService', () => {
       queryBuilder.getRawMany = jest.fn()
         .mockResolvedValueOnce([{ userId: 1 }, { userId: 2 }, { userId: 3 }]); // new users
 
+      // day0 的活跃数直接取 totalUsers，无需查询；服务依次查询 day1/day3/day7/day14/day30
       queryBuilder.getRawOne = jest.fn()
-        .mockResolvedValueOnce({ count: '3' })   // day0
         .mockResolvedValueOnce({ count: '2' })   // day1
         .mockResolvedValueOnce({ count: '1' })   // day3
         .mockResolvedValueOnce({ count: '1' })   // day7
@@ -284,7 +300,8 @@ describe('AnalyticsService', () => {
         .mockResolvedValueOnce({ count: '0' });  // day30
 
       cohortRepo.findOne = jest.fn().mockResolvedValue(null);
-      cohortRepo.create = jest.fn().mockReturnValue({});
+      // 与 TypeORM Repository.create 行为一致：基于入参构造新的实体（保留 totalUsers 等字段）
+      cohortRepo.create = jest.fn().mockImplementation((data) => ({ ...data }));
       cohortRepo.save = jest.fn().mockResolvedValue({});
 
       await service.computeRetentionCohorts(new Date('2024-01-15'));
@@ -319,12 +336,11 @@ describe('AnalyticsService', () => {
         .mockResolvedValueOnce([{ userId: 1 }, { userId: 2 }, { userId: 3 }]);
 
       queryBuilder.getRawOne = jest.fn()
-        .mockResolvedValueOnce({ count: '3' })
-        .mockResolvedValueOnce({ count: '2' })
-        .mockResolvedValueOnce({ count: '1' })
-        .mockResolvedValueOnce({ count: '1' })
-        .mockResolvedValueOnce({ count: '0' })
-        .mockResolvedValueOnce({ count: '0' });
+        .mockResolvedValueOnce({ count: '2' })   // day1
+        .mockResolvedValueOnce({ count: '1' })   // day3
+        .mockResolvedValueOnce({ count: '1' })   // day7
+        .mockResolvedValueOnce({ count: '0' })   // day14
+        .mockResolvedValueOnce({ count: '0' });  // day30
 
       cohortRepo.findOne = jest.fn().mockResolvedValue(existingCohort);
       cohortRepo.save = jest.fn().mockImplementation((c) => c);
@@ -355,6 +371,7 @@ describe('AnalyticsService', () => {
         userId: 1,
         totalSpent: 999.99,
         purchaseCount: 10,
+        totalGamesPlayed: 25,
       });
 
       const ltv = await service.getUserLTV(1);
@@ -379,7 +396,9 @@ describe('AnalyticsService', () => {
   describe('updateUserLTV', () => {
     it('should create new LTV record for first purchase', async () => {
       ltvRepo.findOne = jest.fn().mockResolvedValue(null);
-      ltvRepo.create = jest.fn().mockReturnValue({ userId: 1 });
+      // 与 TypeORM Repository.create 行为一致：基于入参构造新的实体实例，
+      // 使 create 的调用参数不会被服务后续的字段修改所污染
+      ltvRepo.create = jest.fn().mockImplementation((data) => ({ ...data }));
       ltvRepo.save = jest.fn().mockImplementation((ltv) => ltv);
 
       await (service as any).updateUserLTV(1, 99.99);
@@ -416,7 +435,7 @@ describe('AnalyticsService', () => {
         expect.objectContaining({
           totalSpent: 350,
           purchaseCount: 3,
-          avgPurchaseValue: 116.67,
+          avgPurchaseValue: 350 / 3,
         }),
       );
     });
@@ -511,24 +530,23 @@ describe('AnalyticsService', () => {
     it('should return complete dashboard statistics', async () => {
       const queryBuilder = eventRepo.createQueryBuilder();
 
-      // Mock all the parallel queries
+      // getDashboardStats 并行发起多个查询（Promise.all），getRawOne 的调用顺序为：
+      // 同步阶段：newUsers -> gamesPlayed -> revenue -> totalUsers -> 转化率访客数 -> topGame
+      // 微任务阶段（pfcount=0 走 DB 回退）：DAU -> MAU -> 转化率付费用户数 -> 平均会话时长
       queryBuilder.getRawOne = jest.fn()
-        .mockResolvedValueOnce({ count: '1500' })    // DAU
         .mockResolvedValueOnce({ count: '3' })        // new users
         .mockResolvedValueOnce({ count: '5000' })     // games played
         .mockResolvedValueOnce({ total: '999.99' })   // revenue
         .mockResolvedValueOnce({ count: '50000' })    // total users
-        .mockResolvedValueOnce({ count: '800' })      // DAU fallback
-        .mockResolvedValueOnce({ count: '20000' });   // MAU
+        .mockResolvedValueOnce({ count: '800' })      // conversion: visitors
+        .mockResolvedValueOnce({ count: '20000' })    // top game（无 gameType -> 回退 'chess'）
+        .mockResolvedValueOnce({ count: '1500' })     // DAU (DB fallback)
+        .mockResolvedValueOnce({ count: '20000' });   // MAU (DB fallback)
 
       cohortRepo.findOne = jest.fn().mockResolvedValue({
         day1Rate: 45.5,
         day7Rate: 30.2,
       });
-
-      queryBuilder.getRawMany = jest.fn()
-        .mockResolvedValueOnce([])  // repeat purchase
-        .mockResolvedValueOnce([{ gameType: 'chess', count: 200 }]);
 
       const result = await service.getDashboardStats();
 
@@ -549,17 +567,21 @@ describe('AnalyticsService', () => {
     it('should compute and save daily statistics', async () => {
       const queryBuilder = eventRepo.createQueryBuilder();
 
+      // computeDailyStats 按顺序查询：DAU -> newUsers -> totalUsers -> gamesPlayed
+      // -> revenue -> avgSession -> paidUsers -> topGame
       queryBuilder.getRawOne = jest.fn()
-        .mockResolvedValueOnce({ count: '1500' })    // DAU
-        .mockResolvedValueOnce({ count: '50' })       // new users
-        .mockResolvedValueOnce({ count: '3000' })     // games played
-        .mockResolvedValueOnce({ total: '5000.00' })  // revenue
-        .mockResolvedValueOnce({ avg: '900.50' })     // avg session
-        .mockResolvedValueOnce({ count: '100' });     // paid users
+        .mockResolvedValueOnce({ count: '1500' })      // DAU
+        .mockResolvedValueOnce({ count: '50' })        // new users
+        .mockResolvedValueOnce({ count: '50000' })     // total users
+        .mockResolvedValueOnce({ count: '3000' })      // games played
+        .mockResolvedValueOnce({ total: '5000.00' })   // revenue
+        .mockResolvedValueOnce({ avg: '900.50' })      // avg session
+        .mockResolvedValueOnce({ count: '100' })       // paid users
+        .mockResolvedValueOnce({ gameType: 'chess', count: 1500 }); // top game
 
+      // 游戏类型分布
       queryBuilder.getRawMany = jest.fn()
-        .mockResolvedValueOnce([{ gameType: 'chess', count: 1500 }, { gameType: 'blitz', count: 1000 }])
-        .mockResolvedValueOnce([]);
+        .mockResolvedValueOnce([{ gameType: 'chess', count: 1500 }, { gameType: 'blitz', count: 1000 }]);
 
       dailyStatsRepo.findOne = jest.fn().mockResolvedValue(null);
       dailyStatsRepo.create = jest.fn().mockReturnValue({});
@@ -584,7 +606,7 @@ describe('AnalyticsService', () => {
   describe('handleSpecialEvents', () => {
     it('should update LTV on purchase', async () => {
       ltvRepo.findOne = jest.fn().mockResolvedValue(null);
-      ltvRepo.create = jest.fn().mockReturnValue({ userId: 1 });
+      ltvRepo.create = jest.fn().mockImplementation((data) => data);
       ltvRepo.save = jest.fn().mockResolvedValue({});
 
       await service.trackEvent(1, EventType.PURCHASE, { amount: '50.00' });

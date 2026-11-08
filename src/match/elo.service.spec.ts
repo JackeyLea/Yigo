@@ -114,12 +114,12 @@ describe('EloService', () => {
 
     it('弱者赢强者时应大量加分', () => {
       const [newA, newB] = service.updateRatingsDuel(1400, 1600, 1.0, 50, 50);
-      // 弱者赢，加分多
+      // 弱者赢，加分多（K=20, E≈0.24, 期望变化≈15.19，取整后为15）
       const changeA = newA - 1400;
-      expect(changeA).toBeGreaterThan(15);
+      expect(changeA).toBeGreaterThanOrEqual(15);
       // 强者输，扣分多
       const changeB = 1600 - newB;
-      expect(changeB).toBeGreaterThan(15);
+      expect(changeB).toBeGreaterThanOrEqual(15);
     });
 
     it('同水平胜负时应获得标准K分', () => {

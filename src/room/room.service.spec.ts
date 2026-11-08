@@ -11,6 +11,7 @@ import { NotFoundException, ForbiddenException, ConflictException, BadRequestExc
 import { RoomService } from './room.service';
 import { RoomStateMachine, RoomEvent } from './room-state-machine';
 import { EventBus } from '../plugin/event-bus';
+import { CleanupRegistry } from '../plugin/cleanup-registry';
 import { Room, RoomStatus, RoomMode } from '../common/entities/room.entity';
 import { RoomPlayer } from '../common/entities/room-player.entity';
 import { User } from '../common/entities/user.entity';
@@ -64,6 +65,7 @@ describe('RoomService', () => {
     publishToRoom: jest.fn(),
     publishToPlayer: jest.fn(),
     publish: jest.fn(),
+    cleanupForPattern: jest.fn().mockReturnValue(0),
   };
 
   beforeEach(async () => {
@@ -73,6 +75,7 @@ describe('RoomService', () => {
       providers: [
         RoomService,
         RoomStateMachine,
+        CleanupRegistry,
         {
           provide: getRepositoryToken(Room),
           useValue: {
@@ -185,7 +188,8 @@ describe('RoomService', () => {
 
       mockQueryRunner.manager.save.mockResolvedValue(mockRoom);
 
-      // Mock roomPlayers for buildRoomResponse
+      // Mock for buildRoomResponse (createRoom最后通过repository查询房间构建响应)
+      roomRepository.findOne = jest.fn().mockResolvedValue(mockRoom);
       roomPlayerRepository.find = jest.fn().mockResolvedValue([
         { ...mockRoomPlayer, id: '1' },
       ]);
@@ -301,6 +305,13 @@ describe('RoomService', () => {
         is_host: false,
       });
       mockQueryRunner.manager.save.mockResolvedValue({});
+      // 模拟数据库更新：joinRoom通过manager.update增加current_players
+      mockQueryRunner.manager.update.mockImplementation(
+        async (_entity: any, _where: any, partial: any) => {
+          Object.assign(mockRoom, partial);
+          return { affected: 1 };
+        },
+      );
 
       // Mock for buildRoomResponse
       roomPlayerRepository.find = jest.fn().mockResolvedValue([
@@ -819,6 +830,8 @@ describe('RoomService', () => {
       ];
 
       roomRepository.findAndCount = jest.fn().mockResolvedValue([mockRooms, 1]);
+      // Mock for buildRoomResponse (listRooms对每个房间调用buildRoomResponse)
+      roomRepository.findOne = jest.fn().mockResolvedValue(mockRooms[0]);
       roomPlayerRepository.find = jest.fn().mockResolvedValue([
         { user_id: '1', seat_index: 0, is_ready: true, is_host: true, is_ai: false, joined_at: new Date() },
       ]);

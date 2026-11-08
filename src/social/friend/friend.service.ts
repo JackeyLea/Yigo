@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Brackets } from 'typeorm';
-import * as Redis from 'ioredis';
+import Redis from 'ioredis';
 import { Friend, FriendStatus } from '../entities/friend.entity';
 import { User } from '../../common/entities/user.entity';
 import { FriendInfo } from '../interfaces/friend-request.interface';
@@ -30,7 +30,7 @@ export interface FriendRequest {
 @Injectable()
 export class FriendService {
   private readonly logger = new Logger(FriendService.name);
-  private readonly redis: Redis.Redis;
+  private readonly redis: Redis;
   private readonly redisOnlinePrefix = 'friend:online:';
   private readonly redisBlockPrefix = 'friend:block:';
 
@@ -40,7 +40,7 @@ export class FriendService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
   ) {
-    this.redis = new Redis.default({
+    this.redis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT, 10) || 6379,
       password: process.env.REDIS_PASSWORD || undefined,

@@ -2,7 +2,6 @@
  * 斗地主游戏引擎单元测试
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { DoudizhuEngine, RANK_VALUE, sortCards, sortCardsDesc } from '../doudizhu.engine';
 import type { Card, CardCombo } from '../doudizhu.types';
 
@@ -580,7 +579,7 @@ describe('DoudizhuEngine - 游戏结束', () => {
 
 describe('DoudizhuEngine - 工具函数', () => {
   it('sortCards应按升序排序', () => {
-    const cards = [makeCard('A'), makeCard('3'), makeCard('K'), makeCard('5')]);
+    const cards = [makeCard('A'), makeCard('3'), makeCard('K'), makeCard('5')];
     const sorted = sortCards(cards);
     expect(sorted[0].rank).toBe('3');
     expect(sorted[1].rank).toBe('5');
@@ -589,7 +588,7 @@ describe('DoudizhuEngine - 工具函数', () => {
   });
 
   it('sortCardsDesc应按降序排序', () => {
-    const cards = [makeCard('3'), makeCard('A'), makeCard('5'), makeCard('K')]);
+    const cards = [makeCard('3'), makeCard('A'), makeCard('5'), makeCard('K')];
     const sorted = sortCardsDesc(cards);
     expect(sorted[0].rank).toBe('A');
     expect(sorted[1].rank).toBe('K');

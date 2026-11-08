@@ -371,4 +371,13 @@ export class CardSyncStrategy {
   getCurrentFrameSeq(roomId: string): number {
     return this.frameCounters.get(roomId) || 0;
   }
+
+  /**
+   * 获取下一帧序号（自增）
+   */
+  private getNextFrameSeq(roomId: string): number {
+    const next = (this.frameCounters.get(roomId) || 0) + 1;
+    this.frameCounters.set(roomId, next);
+    return next;
+  }
 }

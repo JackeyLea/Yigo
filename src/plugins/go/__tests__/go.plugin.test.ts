@@ -5,7 +5,6 @@
  * game management, and AI integration.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { GoPlugin } from '../go.plugin';
 import type { GoSettings, GoGameOptions } from '../go.types';
 
@@ -28,7 +27,7 @@ describe('GoPlugin - Construction', () => {
 describe('GoPlugin - Lifecycle', () => {
   it('should initialize', () => {
     const plugin = new GoPlugin();
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('plugin:initialized', listener);
     plugin.init();
     expect(listener).toHaveBeenCalled();
@@ -43,7 +42,7 @@ describe('GoPlugin - Lifecycle', () => {
 
   it('should start a game', () => {
     const plugin = new GoPlugin();
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:started', listener);
     plugin.startGame();
     expect(listener).toHaveBeenCalled();
@@ -61,7 +60,7 @@ describe('GoPlugin - Lifecycle', () => {
   it('should end a game', () => {
     const plugin = new GoPlugin();
     plugin.startGame();
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:ended', listener);
     plugin.endGame();
     expect(plugin.isActive()).toBe(false);
@@ -117,14 +116,14 @@ describe('GoPlugin - Player Actions', () => {
   });
 
   it('should emit move event', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:move', listener);
     plugin.placeStone(4, 4);
     expect(listener).toHaveBeenCalled();
   });
 
   it('should emit pass event', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:pass', listener);
     plugin.pass();
     expect(listener).toHaveBeenCalled();
@@ -248,7 +247,7 @@ describe('GoPlugin - Game End', () => {
   });
 
   it('should emit phase change event', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:phaseChange', listener);
     plugin.pass();
     plugin.pass();
@@ -256,7 +255,7 @@ describe('GoPlugin - Game End', () => {
   });
 
   it('should emit end event', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:ended', listener);
     plugin.pass();
     plugin.pass();
@@ -329,7 +328,7 @@ describe('GoPlugin - SGF', () => {
 
   it('should import from SGF', () => {
     const sgf = '(;GM[1]FF[4]SZ[9]KM[7.5];B[ee];W[dd])';
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:sgfImported', listener);
     plugin.importFromSGF(sgf);
     expect(listener).toHaveBeenCalled();
@@ -362,7 +361,7 @@ describe('GoPlugin - Settings', () => {
   });
 
   it('should emit settings updated event', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('settings:updated', listener);
     plugin.updateSettings({ theme: 'dark' });
     expect(listener).toHaveBeenCalled();
@@ -378,14 +377,14 @@ describe('GoPlugin - Event System', () => {
   });
 
   it('should support event subscription', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:move', listener);
     plugin.placeStone(4, 4);
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it('should support event unsubscription', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:move', listener);
     plugin.off('game:move', listener);
     plugin.placeStone(4, 4);
@@ -393,7 +392,7 @@ describe('GoPlugin - Event System', () => {
   });
 
   it('should emit events with correct structure', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('game:move', listener);
     plugin.placeStone(4, 4);
     const call = listener.mock.calls[0][0];
@@ -403,8 +402,8 @@ describe('GoPlugin - Event System', () => {
   });
 
   it('should handle multiple listeners', () => {
-    const listener1 = vi.fn();
-    const listener2 = vi.fn();
+    const listener1 = jest.fn();
+    const listener2 = jest.fn();
     plugin.on('game:move', listener1);
     plugin.on('game:move', listener2);
     plugin.placeStone(4, 4);
@@ -413,10 +412,10 @@ describe('GoPlugin - Event System', () => {
   });
 
   it('should handle listener errors gracefully', () => {
-    const errorListener = vi.fn(() => {
+    const errorListener = jest.fn(() => {
       throw new Error('Listener error');
     });
-    const goodListener = vi.fn();
+    const goodListener = jest.fn();
     plugin.on('game:move', errorListener);
     plugin.on('game:move', goodListener);
     // Should not throw
@@ -425,7 +424,7 @@ describe('GoPlugin - Event System', () => {
   });
 
   it('should support custom events', () => {
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('custom:event', listener);
     plugin.emit('custom:event', { data: 'test' });
     expect(listener).toHaveBeenCalledWith(
@@ -446,21 +445,21 @@ describe('GoPlugin - Game Events Callback', () => {
   });
 
   it('should set game event callbacks', () => {
-    const onMove = vi.fn();
+    const onMove = jest.fn();
     plugin.setGameEvents({ onMove });
     plugin.placeStone(4, 4);
     expect(onMove).toHaveBeenCalled();
   });
 
   it('should call onPass callback', () => {
-    const onPass = vi.fn();
+    const onPass = jest.fn();
     plugin.setGameEvents({ onPass });
     plugin.pass();
     expect(onPass).toHaveBeenCalled();
   });
 
   it('should call onPhaseChange callback', () => {
-    const onPhaseChange = vi.fn();
+    const onPhaseChange = jest.fn();
     plugin.setGameEvents({ onPhaseChange });
     plugin.pass();
     plugin.pass();
@@ -468,7 +467,7 @@ describe('GoPlugin - Game Events Callback', () => {
   });
 
   it('should call onGameEnd callback', () => {
-    const onGameEnd = vi.fn();
+    const onGameEnd = jest.fn();
     plugin.setGameEvents({ onGameEnd });
     plugin.pass();
     plugin.pass();
@@ -493,7 +492,7 @@ describe('GoPlugin - AI', () => {
 
   it('should emit difficulty change event', () => {
     plugin.startGame({ boardSize: 9 });
-    const listener = vi.fn();
+    const listener = jest.fn();
     plugin.on('ai:difficultyChanged', listener);
     plugin.setAIDifficulty('advanced');
     expect(listener).toHaveBeenCalled();

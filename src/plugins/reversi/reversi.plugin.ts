@@ -245,6 +245,14 @@ export class ReversiPlugin {
     return this.engine.getState().currentPlayer === this.options.aiPlayer;
   }
 
+  /** 清除AI走棋定时器 */
+  private clearMoveTimer(): void {
+    if (this.moveTimer) {
+      clearTimeout(this.moveTimer);
+      this.moveTimer = null;
+    }
+  }
+
   /** 检查并触发AI走棋 */
   private checkAITurn(): void {
     if (!this.running) return;
@@ -263,7 +271,7 @@ export class ReversiPlugin {
     this.aiThinking = true;
 
     // 使用setTimeout让AI走棋异步执行，不阻塞UI
-    setTimeout(() => {
+    this.moveTimer = setTimeout(() => {
       try {
         if (!this.ai) return;
         const aiMove = this.ai.getMove(this.engine.getState());

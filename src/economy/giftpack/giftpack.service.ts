@@ -45,7 +45,10 @@ export class GiftpackService {
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
   ) {
-    this.packs = GIFTPACK.PACKS.map(p => ({ ...p }));
+    this.packs = GIFTPACK.PACKS.map((p) => ({
+      ...p,
+      contents: p.contents.map((c) => ({ ...c })),
+    }));
   }
 
   /**

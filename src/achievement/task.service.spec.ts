@@ -12,6 +12,7 @@
  */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 
@@ -663,8 +664,6 @@ describe('TaskService', () => {
             ({
               where: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
             }) as any,
@@ -704,8 +703,6 @@ describe('TaskService', () => {
             ({
               where: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
             }) as any,
@@ -743,8 +740,6 @@ describe('TaskService', () => {
             ({
               where: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
             }) as any,
@@ -771,8 +766,6 @@ describe('TaskService', () => {
           () =>
             ({
               where: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([]),
@@ -813,8 +806,6 @@ describe('TaskService', () => {
             ({
               where: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
             }) as any,
@@ -853,8 +844,6 @@ describe('TaskService', () => {
             ({
               where: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
             }) as any,
@@ -892,8 +881,6 @@ describe('TaskService', () => {
           () =>
             ({
               where: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
@@ -936,8 +923,6 @@ describe('TaskService', () => {
           () =>
             ({
               where: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([mockUserTask]),
@@ -984,7 +969,6 @@ describe('TaskService', () => {
             ({
               innerJoinAndSelect: jest.fn().mockReturnThis(),
               where: jest.fn().mockReturnThis(),
-              andWhere: jest.fn().mockReturnThis(),
               andWhere: jest.fn().mockReturnThis(),
               getMany: jest.fn().mockResolvedValue([expiredUserTask]),
             }) as any,
@@ -1213,10 +1197,12 @@ describe('TaskService', () => {
 
       expect(result).toHaveLength(3);
       // All tasks should be reset to PENDING with fresh progress
-      expect(saveSpy).toHaveBeenCalled();
-      const savedArray = saveSpy.mock.calls[0][0];
-      expect(Array.isArray(savedArray)).toBe(true);
-      for (const task of savedArray) {
+      // 实现为逐条保存（每个过期任务一次 save 调用），而非批量保存数组
+      expect(saveSpy).toHaveBeenCalledTimes(3);
+      const savedTasks = saveSpy.mock.calls.map(
+        (c) => c[0] as unknown as UserTaskProgress,
+      );
+      for (const task of savedTasks) {
         expect(task.status).toBe(TaskStatus.PENDING);
         expect(task.completed_at).toBeNull();
         expect(task.claimed_at).toBeNull();
@@ -1249,10 +1235,17 @@ describe('TaskService', () => {
 
       const result = await service.getDailyTasks(1);
 
-      expect(result).toHaveLength(1);
-      expect(result[0].status).toBe(TaskStatus.IN_PROGRESS);
-      // Should not save since cycle is still active
-      expect(saveSpy).not.toHaveBeenCalled();
+      // 实现为"获取或创建"：返回所有任务定义（缺失进度的任务 2/3 会新建记录）
+      expect(result).toHaveLength(3);
+      // 处于周期内的任务 1 保持原状态，未被重置
+      const active = result.find((t) => t.task.taskId === '1');
+      expect(active).toBeDefined();
+      expect(active.status).toBe(TaskStatus.IN_PROGRESS);
+      // save 仅应为缺失的任务 2/3 创建记录，绝不保存（重置）周期内的任务 1
+      const savedTaskIds = saveSpy.mock.calls.map(
+        (c) => (c[0] as UserTaskProgress).task_id,
+      );
+      expect(savedTaskIds).not.toContain('1');
     });
   });
 });

@@ -16,35 +16,39 @@ import {
 import { Friend, FriendStatus } from '../entities/friend.entity';
 
 // Mock ioredis
-jest.mock('ioredis', () => {
-  return jest.fn().mockImplementation(() => ({
-    setnx: jest.fn().mockResolvedValue(1),
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue('OK'),
-    del: jest.fn().mockResolvedValue(1),
-    sadd: jest.fn().mockResolvedValue(1),
-    srem: jest.fn().mockResolvedValue(1),
-    smembers: jest.fn().mockResolvedValue([]),
-    hincrby: jest.fn().mockResolvedValue(1),
-    hget: jest.fn().mockResolvedValue(null),
-    hgetall: jest.fn().mockResolvedValue({}),
-    hset: jest.fn().mockResolvedValue(1),
-    hdel: jest.fn().mockResolvedValue(1),
-    lpush: jest.fn().mockResolvedValue(1),
-    ltrim: jest.fn().mockResolvedValue('OK'),
-    lrange: jest.fn().mockResolvedValue([]),
-    expire: jest.fn().mockResolvedValue(1),
-    pipeline: jest.fn().mockReturnValue({
-      sadd: jest.fn().mockReturnThis(),
-      srem: jest.fn().mockReturnThis(),
-      lpush: jest.fn().mockReturnThis(),
-      ltrim: jest.fn().mockReturnThis(),
-      expire: jest.fn().mockReturnThis(),
-      exec: jest.fn().mockResolvedValue([]),
-    }),
-    on: jest.fn(),
-  }));
-});
+// 使用共享单例：ChatService 内部 `new Redis(...)` 与测试中 `require('ioredis')()`
+// 拿到的是同一个实例，测试对 mock 方法的设置才能真正作用于被测服务。
+const mockRedisInstance = {
+  setnx: jest.fn().mockResolvedValue(1),
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue('OK'),
+  del: jest.fn().mockResolvedValue(1),
+  sadd: jest.fn().mockResolvedValue(1),
+  srem: jest.fn().mockResolvedValue(1),
+  smembers: jest.fn().mockResolvedValue([]),
+  hincrby: jest.fn().mockResolvedValue(1),
+  hget: jest.fn().mockResolvedValue(null),
+  hgetall: jest.fn().mockResolvedValue({}),
+  hset: jest.fn().mockResolvedValue(1),
+  hdel: jest.fn().mockResolvedValue(1),
+  lpush: jest.fn().mockResolvedValue(1),
+  ltrim: jest.fn().mockResolvedValue('OK'),
+  lrange: jest.fn().mockResolvedValue([]),
+  expire: jest.fn().mockResolvedValue(1),
+  pipeline: jest.fn().mockReturnValue({
+    sadd: jest.fn().mockReturnThis(),
+    srem: jest.fn().mockReturnThis(),
+    lpush: jest.fn().mockReturnThis(),
+    ltrim: jest.fn().mockReturnThis(),
+    expire: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue([]),
+  }),
+  on: jest.fn(),
+};
+
+jest.mock('ioredis', () =>
+  jest.fn().mockImplementation(() => mockRedisInstance),
+);
 
 describe('ChatService', () => {
   let service: ChatService;

@@ -10,6 +10,7 @@
  * - 初始化（initializeUserAchievements）
  */
 import { Test, TestingModule } from '@nestjs/testing';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -373,6 +374,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { totalWins: 0 },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievement,
       };
 
@@ -424,6 +426,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { currentStreak: 0, maxStreak: 0 },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievementTenWins,
       };
 
@@ -470,6 +473,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { currentStreak: 0, maxStreak: 0 },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievementTenWins,
       };
 
@@ -514,6 +518,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { totalActions: 0, actionsByType: {} },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievementSocial,
       };
 
@@ -563,6 +568,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { consecutiveDays: 0, totalDays: 0, lastLoginDate: null },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievementLogin,
       };
 
@@ -635,6 +641,7 @@ describe('AchievementService', () => {
         unlocked_at: new Date(),
         progress_json: { totalWins: 1 },
         is_claimed: true,
+        user: null as any,
         achievement: mockAchievement,
       };
 
@@ -671,6 +678,7 @@ describe('AchievementService', () => {
         unlocked_at: new Date(),
         progress_json: { totalWins: 1 },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievement,
       };
 
@@ -720,6 +728,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { totalWins: 0 },
         is_claimed: false,
+        user: null as any,
         achievement: mockAchievement,
       };
 
@@ -740,6 +749,7 @@ describe('AchievementService', () => {
         unlocked_at: new Date(),
         progress_json: { totalWins: 1 },
         is_claimed: true,
+        user: null as any,
         achievement: mockAchievement,
       };
 
@@ -795,6 +805,8 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { totalWins: 0 },
         is_claimed: false,
+        user: null as any,
+        achievement: mockAchievement,
       };
 
       jest
@@ -821,6 +833,8 @@ describe('AchievementService', () => {
         unlocked_at: new Date(),
         progress_json: { totalWins: 1 },
         is_claimed: false,
+        user: null as any,
+        achievement: mockAchievement,
       };
 
       jest
@@ -1026,6 +1040,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { movesByType: {}, totalSpecialMoves: 0 },
         is_claimed: false,
+        user: null as any,
         achievement: specialMoveAchievement,
       };
 
@@ -1104,6 +1119,7 @@ describe('AchievementService', () => {
         unlocked_at: null,
         progress_json: { totalGamesPlayed: 95, gamesByGameType: {} },
         is_claimed: false,
+        user: null as any,
         achievement: playAchievement,
       };
 

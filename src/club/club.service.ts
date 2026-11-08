@@ -563,11 +563,15 @@ export class ClubService {
     }
 
     // 记录捐赠事件
-    await this.redis.xadd('club:donations', '*', {
-      clubId,
-      userId: userId.toString(),
-      amount: amount.toString(),
-    });
+    await this.redis.xadd(
+      'club:donations',
+      '*',
+      ...Object.entries({
+        clubId,
+        userId: userId.toString(),
+        amount: amount.toString(),
+      }).flat(),
+    );
   }
 
   /**

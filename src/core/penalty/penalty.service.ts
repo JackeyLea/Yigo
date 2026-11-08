@@ -196,11 +196,11 @@ export class PenaltyService {
 
     if (rule.banDurationSeconds > 0) {
       const banKey = REDIS_KEY.BAN_UNTIL(userId, 'all');
+      const now = Math.floor(Date.now() / 1000);
       const banUntilStr = await this.redis.get(banKey);
 
       if (banUntilStr) {
         const banUntil = parseInt(banUntilStr, 10);
-        const now = Math.floor(Date.now() / 1000);
         if (banUntil > now) {
           canPlay = false;
           cooldownSeconds = banUntil - now;

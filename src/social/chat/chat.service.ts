@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as Redis from 'ioredis';
+import Redis from 'ioredis';
 import { ChatMessage, ChatMessageType, ChatTargetType } from '../entities/chat-message.entity';
 import { Friend, FriendStatus } from '../entities/friend.entity';
 import { PaginatedResult } from '../../common/interfaces/paginated-result.interface';
@@ -19,7 +19,7 @@ import { RecentChat } from '../interfaces/recent-chat.interface';
 @Injectable()
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
-  private readonly redis: Redis.Redis;
+  private readonly redis: Redis;
   private readonly redisRecentPrefix = 'chat:recent:';
   private readonly redisUnreadPrefix = 'chat:unread:';
   private readonly redisBlockPrefix = 'friend:block:';
@@ -31,7 +31,7 @@ export class ChatService {
     @InjectRepository(Friend)
     private readonly friendRepository: Repository<Friend>,
   ) {
-    this.redis = new Redis.default({
+    this.redis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT, 10) || 6379,
       password: process.env.REDIS_PASSWORD || undefined,

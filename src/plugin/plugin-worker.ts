@@ -54,6 +54,7 @@ interface FrameworkContext {
   pluginId: string;
   roomId: string;
   config: Record<string, any>;
+  eventBus: any;
   logger: any;
   localize: (key: string, params?: Record<string, string>) => string;
 }
@@ -393,6 +394,7 @@ function createGameController(
       pluginId,
       roomId: roomConfig.roomId,
       config: roomConfig.config || {},
+      eventBus: state.eventBus as any,
       logger: {
         debug: (msg: string) => logDebug(`[${pluginId}] ${msg}`),
         info: (msg: string) => logInfo(`[${pluginId}] ${msg}`),
@@ -409,9 +411,6 @@ function createGameController(
         return text;
       },
     };
-
-    // 绑定 EventBus
-    frameworkContext.eventBus = state.eventBus as any;
 
     let controller: any = null;
 

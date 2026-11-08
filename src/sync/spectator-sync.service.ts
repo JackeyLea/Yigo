@@ -84,24 +84,24 @@ export class RingBuffer {
     let prev: RingBufferNode | null = null;
 
     while (current) {
+      const next = current.next;
       if (current.event.emitTimestamp <= now) {
         events.push(current.event);
-        // 移除该节点
+        // 移除该节点（prev 保持不变，仍然指向已移除节点的前驱）
         if (prev) {
-          prev.next = current.next;
+          prev.next = next;
         } else {
-          this.head = current.next;
+          this.head = next;
         }
-        if (!current.next) {
+        if (!next) {
           this.tail = prev;
         }
         this.size--;
-        prev = current;
-        current = current.next;
       } else {
-        // 由于环形缓冲区按时间顺序排列，后面的也不会ready
-        break;
+        // 未 ready 的节点保留，继续向后扫描（缓冲区按写入顺序而非 ready 时间排列）
+        prev = current;
       }
+      current = next;
     }
 
     return events;
@@ -334,11 +334,10 @@ export class SpectatorSyncService implements OnModuleDestroy {
     const state = this.roomStates.get(roomId);
     if (!state) return;
 
-    const now = Date.now();
     for (const event of events) {
       state.ringBuffer.write({
         ...event,
-        emitTimestamp: now + this.delayMs,
+        emitTimestamp: event.timestamp + this.delayMs,
       });
     }
   }

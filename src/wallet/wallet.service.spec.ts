@@ -11,6 +11,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 jest.mock('ioredis', () => {
   return {
+    __esModule: true,
     default: jest.fn().mockImplementation(() => ({
       setnx: jest.fn().mockResolvedValue(1),
       expire: jest.fn().mockResolvedValue(1),

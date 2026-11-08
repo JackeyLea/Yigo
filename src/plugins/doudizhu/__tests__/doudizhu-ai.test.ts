@@ -2,7 +2,6 @@
  * 斗地主AI单元测试
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { DoudizhuAI } from '../ai/doudizhu-ai';
 import { DoudizhuEngine, RANK_VALUE } from '../doudizhu.engine';
 import type { Card, DoudizhuState } from '../doudizhu.types';
@@ -114,7 +113,7 @@ describe('DoudizhuAI - 叫分', () => {
 
     // 替换p1的手牌为强牌
     const state = engine.getState();
-    (state.players[0] as Record<string, unknown>).hand = strongHand;
+    (state.players[0] as unknown as Record<string, unknown>).hand = strongHand;
 
     const bid = ai.getBid(state, 'p1');
     // 有王炸的强牌应该叫分

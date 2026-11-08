@@ -2,7 +2,6 @@
  * 斗地主配置管理单元测试
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   SETTING_GROUPS,
   SETTINGS_TABS,

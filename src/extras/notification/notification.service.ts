@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { NotificationEntity } from './notification.entity';
+import { User } from '../../common/entities/user.entity';
 
 export type NotificationType =
   | 'system'
@@ -33,7 +36,12 @@ export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
   private readonly DEFAULT_PAGE_SIZE = 20;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(NotificationEntity)
+    private readonly notificationRepo: Repository<NotificationEntity>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
   /**
    * 发送通知给指定用户
@@ -45,15 +53,13 @@ export class NotificationService {
     content: string,
     data?: Record<string, any>,
   ): Promise<void> {
-    await this.prisma.notification.create({
-      data: {
-        userId,
-        type,
-        title,
-        content,
-        data: data ?? null,
-        isRead: false,
-      },
+    await this.notificationRepo.save({
+      user_id: userId,
+      type,
+      title,
+      content,
+      data: data ?? null,
+      is_read: false,
     });
 
     this.logger.log(`通知已发送给用户 ${userId}: [${type}] ${title}`);
@@ -69,20 +75,32 @@ export class NotificationService {
     const pageSize = this.DEFAULT_PAGE_SIZE;
     const skip = (page - 1) * pageSize;
 
-    const [items, total] = await Promise.all([
-      this.prisma.notification.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
+    const [rows, total] = await Promise.all([
+      this.notificationRepo.find({
+        where: { user_id: userId },
+        order: { created_at: 'DESC' },
         skip,
         take: pageSize,
       }),
-      this.prisma.notification.count({
-        where: { userId },
+      this.notificationRepo.count({
+        where: { user_id: userId },
       }),
     ]);
 
+    // 实体字段为 snake_case，转换为对外的 camelCase 结构
+    const items: Notification[] = rows.map((row) => ({
+      id: Number(row.id),
+      userId: Number(row.user_id),
+      type: row.type as NotificationType,
+      title: row.title,
+      content: row.content,
+      data: row.data,
+      isRead: row.is_read,
+      createdAt: row.created_at,
+    }));
+
     return {
-      items: items as Notification[],
+      items,
       total,
       page,
       pageSize,
@@ -94,18 +112,18 @@ export class NotificationService {
    * 标记单条通知为已读
    */
   async markAsRead(userId: number, notificationId: number): Promise<void> {
-    const notification = await this.prisma.notification.findFirst({
-      where: { id: notificationId, userId },
+    const notification = await this.notificationRepo.findOne({
+      where: { id: String(notificationId), user_id: userId },
     });
 
     if (!notification) {
       throw new Error('通知不存在或无权访问');
     }
 
-    await this.prisma.notification.update({
-      where: { id: notificationId },
-      data: { isRead: true, updatedAt: new Date() },
-    });
+    await this.notificationRepo.update(
+      { id: String(notificationId) },
+      { is_read: true, updated_at: new Date() },
+    );
 
     this.logger.log(`用户 ${userId} 标记通知 ${notificationId} 为已读`);
   }
@@ -114,10 +132,10 @@ export class NotificationService {
    * 标记用户全部通知为已读
    */
   async markAllAsRead(userId: number): Promise<void> {
-    await this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
-      data: { isRead: true, updatedAt: new Date() },
-    });
+    await this.notificationRepo.update(
+      { user_id: userId, is_read: false },
+      { is_read: true, updated_at: new Date() },
+    );
 
     this.logger.log(`用户 ${userId} 标记全部通知为已读`);
   }
@@ -126,8 +144,8 @@ export class NotificationService {
    * 获取用户未读通知数量
    */
   async getUnreadCount(userId: number): Promise<number> {
-    return this.prisma.notification.count({
-      where: { userId, isRead: false },
+    return this.notificationRepo.count({
+      where: { user_id: userId, is_read: false },
     });
   }
 
@@ -141,23 +159,22 @@ export class NotificationService {
     target = 'all',
   ): Promise<void> {
     if (target === 'all') {
-      const users = await this.prisma.user.findMany({
-        select: { id: true },
+      const users = await this.userRepo.find({
+        select: { user_id: true },
       });
 
       const batchSize = 500;
       for (let i = 0; i < users.length; i += batchSize) {
         const batch = users.slice(i, i + batchSize);
-        await this.prisma.notification.createMany({
-          data: batch.map((user) => ({
-            userId: user.id,
+        await this.notificationRepo.save(
+          batch.map((user) => ({
+            user_id: Number(user.user_id),
             type: 'system' as NotificationType,
             title,
             content,
-            isRead: false,
+            is_read: false,
           })),
-          skipDuplicates: true,
-        });
+        );
       }
 
       this.logger.log(`广播通知已发送给所有用户: ${title}`);
@@ -170,17 +187,15 @@ export class NotificationService {
    * 删除指定通知
    */
   async deleteNotification(userId: number, notificationId: number): Promise<void> {
-    const notification = await this.prisma.notification.findFirst({
-      where: { id: notificationId, userId },
+    const notification = await this.notificationRepo.findOne({
+      where: { id: String(notificationId), user_id: userId },
     });
 
     if (!notification) {
       throw new Error('通知不存在或无权访问');
     }
 
-    await this.prisma.notification.delete({
-      where: { id: notificationId },
-    });
+    await this.notificationRepo.delete({ id: String(notificationId) });
   }
 
   /**
@@ -192,9 +207,8 @@ export class NotificationService {
     gameType: string,
     roomId: string,
   ): Promise<void> {
-    const fromUser = await this.prisma.user.findUnique({
-      where: { id: fromUserId },
-      select: { nickname: true },
+    const fromUser = await this.userRepo.findOne({
+      where: { user_id: String(fromUserId) },
     });
 
     await this.sendNotification(
@@ -213,9 +227,8 @@ export class NotificationService {
     fromUserId: number,
     toUserId: number,
   ): Promise<void> {
-    const fromUser = await this.prisma.user.findUnique({
-      where: { id: fromUserId },
-      select: { nickname: true },
+    const fromUser = await this.userRepo.findOne({
+      where: { user_id: String(fromUserId) },
     });
 
     await this.sendNotification(

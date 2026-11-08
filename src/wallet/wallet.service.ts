@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import * as Redis from 'ioredis';
+import Redis from 'ioredis';
 import { Wallet } from '../common/entities/wallet.entity';
 import {
   Transaction,
@@ -31,7 +31,7 @@ export interface FreezeResult {
 @Injectable()
 export class WalletService {
   private readonly logger = new Logger(WalletService.name);
-  private readonly redis: Redis.Redis;
+  private readonly redis: Redis;
 
   constructor(
     @InjectRepository(Wallet)
@@ -40,7 +40,7 @@ export class WalletService {
     private readonly transactionRepository: Repository<Transaction>,
     private readonly dataSource: DataSource,
   ) {
-    this.redis = new Redis.default({
+    this.redis = new Redis({
       host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT, 10) || 6379,
       password: process.env.REDIS_PASSWORD || undefined,

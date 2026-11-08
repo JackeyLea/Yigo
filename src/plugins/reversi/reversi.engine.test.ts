@@ -15,7 +15,6 @@
  * 遵循需求文档第6章 - 黑白棋插件设计需求
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { ReversiEngine } from './reversi.engine';
 import { ReversiAI } from './ai/reversi-ai';
 import { ReversiPlugin } from './reversi.plugin';

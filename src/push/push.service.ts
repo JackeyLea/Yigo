@@ -543,6 +543,7 @@ export class PushService {
       {
         algorithm: 'ES256',
         header: {
+          alg: 'ES256',
           kid: this.apnsKeyId,
         },
         expiresIn: 3000, // 50分钟有效期

@@ -5,7 +5,6 @@
  * and MCTS algorithm correctness.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { GoAI } from '../ai/go-ai';
 import { GoEngine } from '../go.engine';
 import type { GoState } from '../go.types';

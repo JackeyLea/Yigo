@@ -61,9 +61,9 @@ export class MatchCleanupService {
       const acquired = await this.redis.set(
         lockKey,
         lockValue,
-        'NX',
         'EX',
         this.LOCK_TTL_SECONDS,
+        'NX',
       );
 
       if (!acquired) {

@@ -6,8 +6,11 @@
 import { Module } from '@nestjs/common';
 import { EscrowService } from './escrow.service';
 import { EscrowController } from './escrow.controller';
+import { PluginModule } from '../../plugin/plugin.module';
+import { AiModule } from '../../ai/ai.module';
 
 @Module({
+  imports: [PluginModule, AiModule],
   controllers: [EscrowController],
   providers: [EscrowService],
   exports: [EscrowService],

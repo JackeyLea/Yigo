@@ -54,8 +54,6 @@ export class MixedSyncStrategy {
     action: Action,
     state: GameState,
   ): Promise<void> {
-    const strategy = this.getStrategy(gameType);
-
     if (gameType === GameType.BOARD) {
       // 棋类：操作后发送完整状态
       await this.boardStrategy.handleAction(roomId, action, state);
@@ -74,7 +72,6 @@ export class MixedSyncStrategy {
    */
   async syncFullState(roomId: string, state: GameState): Promise<void> {
     const gameType = this.getGameType(roomId);
-    const strategy = this.getStrategy(gameType);
 
     if (gameType === GameType.BOARD) {
       await this.boardStrategy.syncFullState(roomId, state);

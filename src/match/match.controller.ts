@@ -36,7 +36,7 @@ interface RequestWithUser extends Request {
  * - POST /api/v1/match/:ticketId/accept — 接受匹配
  * - POST /api/v1/match/:ticketId/reject — 拒绝匹配
  */
-@Controller('api/v1/match')
+@Controller('match')
 export class MatchController {
   private readonly logger = new Logger(MatchController.name);
 

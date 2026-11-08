@@ -2,7 +2,6 @@
  * 斗地主插件主类单元测试
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { DoudizhuPlugin } from '../doudizhu.plugin';
 import type { PluginOptions } from '../doudizhu.plugin';
 import { DEFAULT_DOUDIZHU_CONFIG } from '../doudizhu.types';

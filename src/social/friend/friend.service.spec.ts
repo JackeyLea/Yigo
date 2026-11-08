@@ -70,6 +70,9 @@ describe('FriendService', () => {
       take: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
+      delete: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({}),
       getOne: jest.fn(),
       getMany: jest.fn(),
       getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
@@ -341,7 +344,10 @@ describe('FriendService', () => {
 
       await service.blockUser(1, 2);
 
-      expect(mockFriendRepository.delete).toHaveBeenCalled();
+      // 好友关系通过 QueryBuilder 的 delete() 删除（需同时匹配双向关系）
+      const queryBuilder = mockFriendRepository.createQueryBuilder();
+      expect(queryBuilder.delete).toHaveBeenCalled();
+      expect(queryBuilder.execute).toHaveBeenCalled();
       expect(mockFriendRepository.save).toHaveBeenCalled();
     });
 

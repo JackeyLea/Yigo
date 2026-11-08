@@ -10,16 +10,12 @@ import {
   HttpStatus,
   ParseIntPipe,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiParam,
-  ApiQuery,
-} from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  CurrentUser,
+  CurrentUserData,
+} from '../../common/decorators/current-user.decorator';
 
 class SendNotificationDto {
   userId!: number;
@@ -35,10 +31,9 @@ class BroadcastDto {
   target?: string;
 }
 
-@ApiTags('Notification - 通知系统')
-@Controller('api/v1/notifications')
+// 注：@nestjs/swagger 未在 package.json 中声明，相关装饰器已移除
+@Controller('notifications')
 @UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
@@ -46,13 +41,14 @@ export class NotificationController {
    * 获取当前用户的通知列表
    */
   @Get()
-  @ApiOperation({ summary: '通知列表', description: '获取当前用户的通知列表（分页）' })
-  @ApiQuery({ name: 'page', required: false, description: '页码', example: 1 })
   async getNotifications(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Query('page', new ParseIntPipe({ optional: true })) page = 1,
   ) {
-    const result = await this.notificationService.getNotifications(userId, page);
+    const result = await this.notificationService.getNotifications(
+      user.userId,
+      page,
+    );
     return {
       success: true,
       data: result,
@@ -63,9 +59,8 @@ export class NotificationController {
    * 获取未读通知数量
    */
   @Get('unread-count')
-  @ApiOperation({ summary: '未读通知数', description: '获取当前用户未读通知数量' })
-  async getUnreadCount(@CurrentUser('id') userId: number) {
-    const count = await this.notificationService.getUnreadCount(userId);
+  async getUnreadCount(@CurrentUser() user: CurrentUserData) {
+    const count = await this.notificationService.getUnreadCount(user.userId);
     return {
       success: true,
       data: { count },
@@ -77,13 +72,11 @@ export class NotificationController {
    */
   @Post(':id/read')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '标记已读', description: '将指定通知标记为已读' })
-  @ApiParam({ name: 'id', description: '通知ID', example: 1 })
   async markAsRead(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Param('id', ParseIntPipe) notificationId: number,
   ) {
-    await this.notificationService.markAsRead(userId, notificationId);
+    await this.notificationService.markAsRead(user.userId, notificationId);
     return {
       success: true,
       message: '已标记为已读',
@@ -95,9 +88,8 @@ export class NotificationController {
    */
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '全部已读', description: '将当前用户所有通知标记为已读' })
-  async markAllAsRead(@CurrentUser('id') userId: number) {
-    await this.notificationService.markAllAsRead(userId);
+  async markAllAsRead(@CurrentUser() user: CurrentUserData) {
+    await this.notificationService.markAllAsRead(user.userId);
     return {
       success: true,
       message: '全部通知已标记为已读',
@@ -109,7 +101,6 @@ export class NotificationController {
    */
   @Post('send')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '发送通知', description: '向指定用户发送通知（需管理员权限）' })
   async sendNotification(@Body() dto: SendNotificationDto) {
     await this.notificationService.sendNotification(
       dto.userId,
@@ -129,7 +120,6 @@ export class NotificationController {
    */
   @Post('broadcast')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '广播通知', description: '向所有用户发送广播通知（需管理员权限）' })
   async sendBroadcast(@Body() dto: BroadcastDto) {
     await this.notificationService.sendBroadcast(
       dto.title,
@@ -147,13 +137,11 @@ export class NotificationController {
    */
   @Post(':id/delete')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '删除通知', description: '删除指定通知' })
-  @ApiParam({ name: 'id', description: '通知ID', example: 1 })
   async deleteNotification(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Param('id', ParseIntPipe) notificationId: number,
   ) {
-    await this.notificationService.deleteNotification(userId, notificationId);
+    await this.notificationService.deleteNotification(user.userId, notificationId);
     return {
       success: true,
       message: '通知已删除',

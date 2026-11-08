@@ -3,7 +3,6 @@
  * Mahjong Plugin - Unit Tests
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import {
   Tile, Suit, TileUtils,
   MahjongPlayer, MahjongState,

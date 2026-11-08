@@ -36,7 +36,7 @@ interface RequestWithUser {
  *
  * @baseUrl /api/v1/lobby
  */
-@Controller('api/v1/lobby')
+@Controller('lobby')
 export class LobbyController {
   constructor(private readonly lobbyService: LobbyService) {}
 

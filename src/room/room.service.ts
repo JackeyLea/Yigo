@@ -14,7 +14,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, DataSource } from 'typeorm';
+import { Repository, LessThan, DataSource, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -241,7 +241,7 @@ export class RoomService {
       where.status = status;
     } else {
       // 默认只显示等待中和准备中的房间
-      where.status = [RoomStatus.WAITING, RoomStatus.READY];
+      where.status = In([RoomStatus.WAITING, RoomStatus.READY]);
     }
 
     const [rooms, total] = await this.roomRepository.findAndCount({

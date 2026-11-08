@@ -20,6 +20,7 @@ import { GameRecord } from './game-record.entity';
 
 export enum RoomStatus {
   WAITING = 'waiting',
+  READY = 'ready',
   PLAYING = 'playing',
   PAUSED = 'paused',
   FINISHED = 'finished',

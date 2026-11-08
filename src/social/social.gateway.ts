@@ -15,11 +15,12 @@ import { Server, Socket } from 'socket.io';
 import { Logger, UseGuards } from '@nestjs/common';
 import { FriendService } from './friend/friend.service';
 import { ChatService } from './chat/chat.service';
+import { ChatMessageType } from './entities/chat-message.entity';
 
 interface ChatMessagePayload {
   toUserId: number;
   content: string;
-  type?: 'text' | 'image';
+  type?: ChatMessageType;
 }
 
 interface RoomMessagePayload {
@@ -115,7 +116,7 @@ export class SocialGateway implements OnGatewayConnection, OnGatewayDisconnect {
         userId,
         payload.toUserId,
         payload.content,
-        payload.type || 'text',
+        payload.type || ChatMessageType.TEXT,
       );
 
       // 发送给接收者

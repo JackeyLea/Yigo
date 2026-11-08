@@ -48,7 +48,7 @@ class UpdateGameConfigDto {
  * Admin Controller - Operations backend API endpoints.
  * All routes are prefixed with /api/admin and require admin authentication.
  */
-@Controller('api/admin')
+@Controller('admin')
 @UseGuards(AdminGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}

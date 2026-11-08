@@ -20,9 +20,9 @@ describe('RoomStateMachine', () => {
       ).toBe(true);
     });
 
-    it('should allow WAITING -> READY via PLAYER_UNREADY', () => {
+    it('should allow READY -> WAITING via PLAYER_UNREADY', () => {
       expect(
-        stateMachine.canTransition(RoomStatus.WAITING, RoomEvent.PLAYER_UNREADY),
+        stateMachine.canTransition(RoomStatus.READY, RoomEvent.PLAYER_UNREADY),
       ).toBe(true);
     });
 

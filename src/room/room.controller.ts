@@ -20,6 +20,7 @@ import {
 } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { IsBoolean, IsInt } from 'class-validator';
 import { RoomService } from './room.service';
 import {
   CreateRoomDto,
@@ -32,13 +33,15 @@ import {
  * 准备状态DTO
  */
 class ReadyDto {
-  isReady: boolean;
+  @IsBoolean()
+  isReady: boolean = true;
 }
 
 /**
  * 踢人DTO
  */
 class KickDto {
+  @IsInt()
   targetUserId: number;
 }
 
@@ -46,10 +49,11 @@ class KickDto {
  * 转移房主DTO
  */
 class TransferHostDto {
+  @IsInt()
   newHostId: number;
 }
 
-@Controller('api/v1/rooms')
+@Controller('rooms')
 export class RoomController {
   constructor(private readonly roomService: RoomService) {}
 
@@ -65,7 +69,7 @@ export class RoomController {
     @Request() req,
     @Body() dto: CreateRoomDto,
   ): Promise<RoomResponseDto> {
-    const userId = req.user.user_id || req.user.id;
+    const userId = req.user.userId;
     return this.roomService.createRoom(Number(userId), dto);
   }
 
@@ -107,7 +111,7 @@ export class RoomController {
     @Param('roomId') roomId: string,
     @Body() dto: JoinRoomDto,
   ): Promise<RoomResponseDto> {
-    const userId = req.user.user_id || req.user.id;
+    const userId = req.user.userId;
     // 确保使用URL中的roomId
     const joinDto = { ...dto, roomId };
     return this.roomService.joinRoom(Number(userId), joinDto);
@@ -124,7 +128,7 @@ export class RoomController {
     @Request() req,
     @Param('roomId') roomId: string,
   ): Promise<{ message: string }> {
-    const userId = req.user.user_id || req.user.id;
+    const userId = req.user.userId;
     await this.roomService.leaveRoom(Number(userId), roomId);
     return { message: '已离开房间' };
   }
@@ -143,7 +147,7 @@ export class RoomController {
     @Param('roomId') roomId: string,
     @Body() dto: KickDto,
   ): Promise<{ message: string }> {
-    const hostId = req.user.user_id || req.user.id;
+    const hostId = req.user.userId;
     await this.roomService.kickPlayer(Number(hostId), roomId, dto.targetUserId);
     return { message: '已踢出玩家' };
   }
@@ -160,7 +164,7 @@ export class RoomController {
     @Param('roomId') roomId: string,
     @Body() dto: TransferHostDto,
   ): Promise<{ message: string }> {
-    const hostId = req.user.user_id || req.user.id;
+    const hostId = req.user.userId;
     await this.roomService.transferHost(Number(hostId), roomId, dto.newHostId);
     return { message: '房主权限已转移' };
   }
@@ -178,7 +182,7 @@ export class RoomController {
     @Param('roomId') roomId: string,
     @Body() dto: ReadyDto,
   ): Promise<RoomResponseDto> {
-    const userId = req.user.user_id || req.user.id;
+    const userId = req.user.userId;
     return this.roomService.setReady(Number(userId), roomId, dto.isReady);
   }
 
@@ -193,7 +197,7 @@ export class RoomController {
     @Request() req,
     @Param('roomId') roomId: string,
   ): Promise<{ message: string }> {
-    const hostId = req.user.user_id || req.user.id;
+    const hostId = req.user.userId;
     await this.roomService.startGame(Number(hostId), roomId);
     return { message: '游戏已开始' };
   }
@@ -209,7 +213,7 @@ export class RoomController {
     @Request() req,
     @Param('roomId') roomId: string,
   ): Promise<{ message: string }> {
-    const hostId = req.user.user_id || req.user.id;
+    const hostId = req.user.userId;
     await this.roomService.dissolveRoom(Number(hostId), roomId);
     return { message: '房间已解散' };
   }
@@ -227,7 +231,7 @@ export class RoomController {
     @Request() req,
     @Param('roomId') roomId: string,
   ): Promise<{ message: string }> {
-    const spectatorId = req.user.user_id || req.user.id;
+    const spectatorId = req.user.userId;
     await this.roomService.spectatorJoin(Number(spectatorId), roomId);
     return { message: '已进入观战模式' };
   }
@@ -243,7 +247,7 @@ export class RoomController {
     @Request() req,
     @Param('roomId') roomId: string,
   ): Promise<{ message: string }> {
-    const spectatorId = req.user.user_id || req.user.id;
+    const spectatorId = req.user.userId;
     await this.roomService.spectatorLeave(Number(spectatorId), roomId);
     return { message: '已退出观战' };
   }

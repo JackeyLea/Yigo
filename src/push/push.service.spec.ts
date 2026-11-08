@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { getRedisToken } from '@liaoliaots/nestjs-redis';
 import { PushService, PushFilter } from './push.service';
 import { DeviceToken, Platform, PushLog, PushStatus, PushType } from './entities';
 
@@ -16,22 +17,26 @@ type MockRepository<T> = {
   update: jest.Mock;
 };
 
-const createMockRepository = <T>(): MockRepository<T> => ({
-  findOne: jest.fn(),
-  find: jest.fn(),
-  findAndCount: jest.fn(),
-  count: jest.fn(),
-  create: jest.fn(),
-  save: jest.fn(),
-  remove: jest.fn(),
-  createQueryBuilder: jest.fn(() => ({
+const createMockRepository = <T>(): MockRepository<T> => {
+  // 共享同一个 queryBuilder 实例：测试中捕获的实例与被测服务内部拿到的是同一个对象
+  const queryBuilder = {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     getMany: jest.fn(),
     getManyAndCount: jest.fn(),
-  })),
-  update: jest.fn(),
-});
+  };
+  return {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    findAndCount: jest.fn(),
+    count: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    remove: jest.fn(),
+    createQueryBuilder: jest.fn(() => queryBuilder),
+    update: jest.fn(),
+  };
+};
 
 describe('PushService', () => {
   let service: PushService;
@@ -46,7 +51,7 @@ describe('PushService', () => {
         { provide: getRepositoryToken(DeviceToken), useValue: createMockRepository<DeviceToken>() },
         { provide: getRepositoryToken(PushLog), useValue: createMockRepository<PushLog>() },
         {
-          provide: 'default_IORedisModuleConnectionToken',
+          provide: getRedisToken('default'),
           useValue: {
             hset: jest.fn().mockResolvedValue(1),
             hget: jest.fn().mockResolvedValue(null),
@@ -77,7 +82,7 @@ describe('PushService', () => {
     service = module.get<PushService>(PushService);
     deviceTokenRepo = module.get(getRepositoryToken(DeviceToken));
     pushLogRepo = module.get(getRepositoryToken(PushLog));
-    redis = module.get('default_IORedisModuleConnectionToken');
+    redis = module.get(getRedisToken('default'));
   });
 
   afterEach(() => {

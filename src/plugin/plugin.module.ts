@@ -7,6 +7,7 @@ import { PluginSandbox } from './plugin-sandbox';
 import { WorkerPoolService } from './worker-pool.service';
 import { EventBus } from './event-bus';
 import { AdminGuard } from './guards/admin.guard';
+import { CleanupRegistry } from './cleanup-registry';
 
 /**
  * PluginModule - 插件管理模块
@@ -41,7 +42,8 @@ import { AdminGuard } from './guards/admin.guard';
     PluginSandbox,
     EventBus,
     AdminGuard,
+    CleanupRegistry,
   ],
-  exports: [PluginLoaderService, PluginSandbox, EventBus, WorkerPoolService],
+  exports: [PluginLoaderService, PluginSandbox, EventBus, WorkerPoolService, CleanupRegistry],
 })
 export class PluginModule {}

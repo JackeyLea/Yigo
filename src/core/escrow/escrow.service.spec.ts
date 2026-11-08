@@ -192,6 +192,8 @@ describe('EscrowService', () => {
       redisMock.get.mockResolvedValue(JSON.stringify(status));
 
       const mockGameState = {
+        status: 'playing',
+        players: [],
         board: [],
         currentPlayer: mockPlayerId,
         legalActions: [
@@ -210,7 +212,10 @@ describe('EscrowService', () => {
     it('should return empty result when not escrowed', async () => {
       redisMock.get.mockResolvedValue(null);
 
-      const result = await service.getEscrowAction(mockRoomId, mockPlayerId, {});
+      const result = await service.getEscrowAction(mockRoomId, mockPlayerId, {
+        status: 'playing',
+        players: [],
+      });
 
       expect(result.isEscrowed).toBe(false);
       expect(aiEngineService.requestAction).not.toHaveBeenCalled();

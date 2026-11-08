@@ -462,7 +462,7 @@ describe('MctsEngine', () => {
     expect(unvisitedChild.uctScore(1.414)).toBe(Infinity);
     
     // 已访问节点的UCT分数应该是有限值
-    expect(visitedChild.uctScore(1.414)).toBeFinite();
+    expect(Number.isFinite(visitedChild.uctScore(1.414))).toBe(true);
   });
 
   it('should support rapid evaluation mode', () => {
@@ -553,12 +553,16 @@ describe('AiEngineService', () => {
   });
 
   it('should get engine stats', async () => {
+    // 服务实例在整个 describe 中共享（beforeAll 创建），
+    // 之前的用例已创建若干实例，因此这里断言"新建 2 个后总数增加 2"。
+    const beforeCount = service.getStats().totalInstances;
+
     await service.createAI('chess', 'easy');
     await service.createAI('go', 'hard');
-    
+
     const stats = service.getStats();
-    
-    expect(stats.totalInstances).toBe(2);
+
+    expect(stats.totalInstances).toBe(beforeCount + 2);
     expect(stats.poolStats).toBeDefined();
   });
 

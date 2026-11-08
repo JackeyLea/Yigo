@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { TutorialProgress as TutorialProgressEntity } from './tutorial-progress.entity';
 
 export interface TutorialStep {
   id: string;
@@ -32,7 +34,10 @@ export class TutorialService {
   private readonly logger = new Logger(TutorialService.name);
   private readonly STEP_ORDER_MAP: Map<string, number>;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    @InjectRepository(TutorialProgressEntity)
+    private readonly progressRepo: Repository<TutorialProgressEntity>,
+  ) {
     this.STEP_ORDER_MAP = new Map(TUTORIAL_STEPS.map((s) => [s.id, s.order]));
   }
 
@@ -40,8 +45,8 @@ export class TutorialService {
    * 获取用户的新手引导进度
    */
   async getTutorialProgress(userId: number): Promise<TutorialProgress> {
-    const progress = await this.prisma.tutorialProgress.findUnique({
-      where: { userId },
+    const progress = await this.progressRepo.findOne({
+      where: { user_id: userId },
     });
 
     if (!progress) {
@@ -55,7 +60,7 @@ export class TutorialService {
       };
     }
 
-    const completedSteps = (progress.completedSteps as string[]) || [];
+    const completedSteps = (progress.completed_steps as string[]) || [];
     return {
       userId,
       completedSteps,
@@ -75,30 +80,28 @@ export class TutorialService {
       throw new Error(`无效的引导步骤: ${stepId}`);
     }
 
-    const progress = await this.prisma.tutorialProgress.findUnique({
-      where: { userId },
+    const progress = await this.progressRepo.findOne({
+      where: { user_id: userId },
     });
 
     if (progress) {
-      const completedSteps = new Set(progress.completedSteps as string[]);
+      const completedSteps = new Set(progress.completed_steps as string[]);
       completedSteps.add(stepId);
       const isCompleted = this.checkIsCompleted([...completedSteps]);
 
-      await this.prisma.tutorialProgress.update({
-        where: { userId },
-        data: {
-          completedSteps: [...completedSteps],
-          isCompleted,
-          updatedAt: new Date(),
+      await this.progressRepo.update(
+        { user_id: userId },
+        {
+          completed_steps: [...completedSteps],
+          is_completed: isCompleted,
+          updated_at: new Date(),
         },
-      });
+      );
     } else {
-      await this.prisma.tutorialProgress.create({
-        data: {
-          userId,
-          completedSteps: [stepId],
-          isCompleted: this.checkIsCompleted([stepId]),
-        },
+      await this.progressRepo.insert({
+        user_id: userId,
+        completed_steps: [stepId],
+        is_completed: this.checkIsCompleted([stepId]),
       });
     }
 
@@ -109,29 +112,36 @@ export class TutorialService {
    * 检查用户是否已完成全部引导
    */
   async isTutorialCompleted(userId: number): Promise<boolean> {
-    const progress = await this.prisma.tutorialProgress.findUnique({
-      where: { userId },
+    const progress = await this.progressRepo.findOne({
+      where: { user_id: userId },
     });
-    return progress?.isCompleted ?? false;
+    return progress?.is_completed ?? false;
   }
 
   /**
    * 重置用户引导进度
    */
   async resetTutorial(userId: number): Promise<void> {
-    await this.prisma.tutorialProgress.upsert({
-      where: { userId },
-      create: {
-        userId,
-        completedSteps: [],
-        isCompleted: false,
-      },
-      update: {
-        completedSteps: [],
-        isCompleted: false,
-        updatedAt: new Date(),
-      },
+    const progress = await this.progressRepo.findOne({
+      where: { user_id: userId },
     });
+
+    if (progress) {
+      await this.progressRepo.update(
+        { user_id: userId },
+        {
+          completed_steps: [],
+          is_completed: false,
+          updated_at: new Date(),
+        },
+      );
+    } else {
+      await this.progressRepo.insert({
+        user_id: userId,
+        completed_steps: [],
+        is_completed: false,
+      });
+    }
 
     this.logger.log(`用户 ${userId} 的新手引导已重置`);
   }

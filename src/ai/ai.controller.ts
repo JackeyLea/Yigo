@@ -22,7 +22,7 @@ import { Action } from '../plugin/interfaces/game-controller.interface';
  */
 @ApiTags('Admin - AI Engine')
 @ApiBearerAuth()
-@Controller('api/v1/admin/ai')
+@Controller('admin/ai')
 export class AiController {
   constructor(private readonly aiEngineService: AiEngineService) {}
 

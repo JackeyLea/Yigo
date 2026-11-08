@@ -62,7 +62,7 @@ interface RefreshTasksDto {
   type?: TaskType;
 }
 
-@Controller('api/v1/tasks')
+@Controller('tasks')
 export class TaskController {
   constructor(private readonly taskService: TaskService) {}
 

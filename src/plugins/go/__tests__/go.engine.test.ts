@@ -5,7 +5,6 @@
  * Tests board management, rules, scoring, and SGF import/export.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import { GoEngine } from '../go.engine';
 import type { BoardSize, Position } from '../go.types';
 
@@ -744,7 +743,7 @@ describe('GoEngine - Edge Cases', () => {
   it('should maintain immutability of getState', () => {
     const engine = new GoEngine(9);
     const state1 = engine.getState();
-    state1.board[0][0] = 99; // Mutate the copy
+    state1.board[0][0] = 1; // Mutate the copy
     const state2 = engine.getState();
     expect(state2.board[0][0]).toBe(0); // Original unchanged
   });

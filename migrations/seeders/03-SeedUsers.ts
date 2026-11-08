@@ -3,6 +3,7 @@
  * 种子数据：创建系统默认账户、测试用户及对应的钱包数据
  */
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import * as argon2 from 'argon2';
 
 export interface UserSeedData {
   username: string;
@@ -22,8 +23,8 @@ export interface WalletSeedData {
   balance: number;
 }
 
-// bcrypt hash for 'password123' (cost factor 12)
-const DEFAULT_PASSWORD_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiAYMyzJ/I1e';
+// 默认密码 'password123'，使用与 AuthService 一致的 argon2id 算法运行时生成
+const DEFAULT_PASSWORD_HASH = ''; // 在 up() 中惰性生成
 
 const USER_SEEDS: UserSeedData[] = [
   {
@@ -136,6 +137,14 @@ export class SeedUsers implements MigrationInterface {
     const now = new Date();
     const createdUsers: Map<string, string> = new Map(); // username -> user_id
 
+    // 生成与 AuthService 一致的 argon2id 哈希
+    const passwordHash = await argon2.hash('password123', {
+      type: argon2.argon2id,
+      memoryCost: 65536,
+      timeCost: 3,
+      parallelism: 4,
+    });
+
     // 1. Insert users
     for (const user of USER_SEEDS) {
       const result = await queryRunner.query(
@@ -156,7 +165,7 @@ export class SeedUsers implements MigrationInterface {
         RETURNING user_id`,
         [
           user.username,
-          user.password_hash,
+          user.password_hash || passwordHash,
           user.email,
           user.phone,
           user.avatar_url,

@@ -10,7 +10,6 @@ import { MatchQueueService, MatchStatus } from './match-queue.service';
 import { MatchCleanupService } from './match-cleanup.service';
 import { LeaderboardEntry } from '../common/entities/leaderboard-entry.entity';
 import { RoomService } from '../room/room.service';
-import { AiService } from '../ai/ai.service';
 import { PluginService } from '../plugin/plugin.service';
 import { UserService } from '../user/user.service';
 import { EventBus } from '../plugin/event-bus';
@@ -104,10 +103,6 @@ describe('Match System', () => {
         {
           provide: RoomService,
           useFactory: createMockService,
-        },
-        {
-          provide: AiService,
-          useValue: {},
         },
         {
           provide: PluginService,
@@ -452,7 +447,11 @@ describe('Match System', () => {
       });
 
       it('should reject if user already in queue', async () => {
-        mockRedis.get.mockResolvedValue('TKT-EXISTING');
+        // 仅用户票key返回已存在的ticketId，状态key返回null以走票Hash回退逻辑
+        mockRedis.get.mockImplementation(async (key: string) => {
+          if (key === 'match:user:1') return 'TKT-EXISTING';
+          return null;
+        });
         mockRedis.hgetall.mockResolvedValue({
           userId: '1',
           status: 'queued',

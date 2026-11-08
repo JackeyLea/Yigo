@@ -60,7 +60,7 @@ class PluginActionResponse {
  *
  * 所有端点需要 JWT 认证 + 管理员权限
  */
-@Controller('api/v1/admin/plugins')
+@Controller('admin/plugins')
 @UseGuards(JwtAuthGuard, AdminGuard)
 export class PluginManagerController {
   private readonly logger = new Logger(PluginManagerController.name);

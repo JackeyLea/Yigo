@@ -14,7 +14,7 @@
  */
 
 import { parentPort } from 'worker_threads';
-import { Action, GameState } from './plugin/interfaces/game-controller.interface';
+import { Action, GameState } from '../plugin/interfaces/game-controller.interface';
 import { RandomEngine } from './algorithms/random.engine';
 import { MinimaxEngine } from './algorithms/minimax.engine';
 import { MctsEngine } from './algorithms/mcts.engine';
@@ -263,7 +263,11 @@ async function handleSearch(message: WorkerMessage): Promise<void> {
         // 如果有评估函数代码，尝试创建
         if (options?.evaluateFnCode) {
           try {
-            const evaluateFn = new Function('state', 'action', 'playerId', options.evaluateFnCode);
+            const evaluateFn = new Function('state', 'action', 'playerId', options.evaluateFnCode) as (
+              state: GameState,
+              action: Action,
+              playerId: string,
+            ) => number;
             randomEngine['evaluateFn'] = evaluateFn;
             randomEngine['weighted'] = true;
           } catch {

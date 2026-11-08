@@ -51,7 +51,8 @@ describe('WalletController', () => {
         'POINT',
       );
 
-      expect(result.balance).toBe('1000.0000');
+      // 指定currency时service返回单个Wallet
+      expect((result as Wallet).balance).toBe('1000.0000');
       expect(mockWalletService.getBalance).toHaveBeenCalledWith(1, 'POINT');
     });
   });

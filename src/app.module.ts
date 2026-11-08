@@ -19,6 +19,7 @@ import { AchievementModule } from './achievement/achievement.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { PluginModule } from './plugin/plugin.module';
 import { HealthModule } from './health/health.module';
+import { GatewayModule } from './gateway/gateway.module';
 import { WalletModule } from './wallet/wallet.module';
 import { EscrowModule } from './core/escrow/escrow.module';
 import { PenaltyModule } from './core/penalty/penalty.module';
@@ -56,6 +57,7 @@ import { SyncModule } from './sync/sync.module';
     AchievementModule,
     LeaderboardModule,
     PluginModule,
+    GatewayModule,
     HealthModule,
     WalletModule,
     EscrowModule,

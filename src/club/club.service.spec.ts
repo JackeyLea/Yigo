@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { getRedisToken } from '@liaoliaots/nestjs-redis';
 import { ClubService } from './club.service';
 import { Club, ClubMember, ClubRole, ClubApplication, ApplicationStatus, ClubRoom } from './entities';
 import { BadRequestException, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
@@ -17,23 +18,27 @@ type MockRepository<T> = {
   update: jest.Mock;
 };
 
-const createMockRepository = <T>(): MockRepository<T> => ({
-  findOne: jest.fn(),
-  find: jest.fn(),
-  findAndCount: jest.fn(),
-  count: jest.fn(),
-  create: jest.fn(),
-  save: jest.fn(),
-  remove: jest.fn(),
-  createQueryBuilder: jest.fn(() => ({
+const createMockRepository = <T>(): MockRepository<T> => {
+  // 共享同一个 queryBuilder 实例：测试中捕获的实例与被测服务内部拿到的是同一个对象
+  const queryBuilder = {
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
     getMany: jest.fn(),
-  })),
-  update: jest.fn(),
-});
+  };
+  return {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    findAndCount: jest.fn(),
+    count: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    remove: jest.fn(),
+    createQueryBuilder: jest.fn(() => queryBuilder),
+    update: jest.fn(),
+  };
+};
 
 describe('ClubService', () => {
   let service: ClubService;
@@ -52,7 +57,7 @@ describe('ClubService', () => {
         { provide: getRepositoryToken(ClubApplication), useValue: createMockRepository<ClubApplication>() },
         { provide: getRepositoryToken(ClubRoom), useValue: createMockRepository<ClubRoom>() },
         {
-          provide: 'default_IORedisModuleConnectionToken',
+          provide: getRedisToken('default'),
           useValue: {
             hset: jest.fn().mockResolvedValue(1),
             hgetall: jest.fn().mockResolvedValue({}),
@@ -75,7 +80,7 @@ describe('ClubService', () => {
     memberRepo = module.get(getRepositoryToken(ClubMember));
     applicationRepo = module.get(getRepositoryToken(ClubApplication));
     roomRepo = module.get(getRepositoryToken(ClubRoom));
-    redis = module.get('default_IORedisModuleConnectionToken');
+    redis = module.get(getRedisToken('default'));
   });
 
   afterEach(() => {
@@ -215,6 +220,12 @@ describe('ClubService', () => {
     });
 
     it('should throw ForbiddenException when not admin/owner', async () => {
+      // 服务先校验俱乐部存在，再校验操作者权限
+      clubRepo.findOne = jest.fn().mockResolvedValue({
+        clubId: 'club-1',
+        memberCount: 5,
+        maxMembers: 100,
+      });
       memberRepo.findOne = jest.fn().mockResolvedValue({
         id: 1,
         userId: 1,

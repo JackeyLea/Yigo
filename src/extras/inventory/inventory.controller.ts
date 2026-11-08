@@ -8,10 +8,16 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { InventoryService, InventoryItemWithDefinition } from './inventory.service';
 import { ItemDefinition } from './inventory.entity';
 import { UseItemDto, AddItemDto, RemoveItemDto } from './dto/use-item.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  CurrentUser,
+  CurrentUserData,
+} from '../../common/decorators/current-user.decorator';
 
 @Controller('inventory')
 export class InventoryController {
@@ -31,10 +37,14 @@ export class InventoryController {
    * 使用道具
    */
   @Post('use')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
-  async useItem(@Body() dto: UseItemDto): Promise<void> {
+  async useItem(
+    @CurrentUser() user: CurrentUserData,
+    @Body() dto: UseItemDto,
+  ): Promise<void> {
     return this.inventoryService.useItem(
-      dto.userId || 0,
+      user.userId,
       dto.itemId,
       dto.count || 1,
     );

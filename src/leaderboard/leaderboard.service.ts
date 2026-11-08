@@ -332,7 +332,8 @@ export class LeaderboardService {
       rating: p.rating,
       gamesPlayed: p.gamesPlayed,
       rank: p.rank,
-      score: p.rank === 1 ? 1 : p.rank === 2 ? 0.5 : 0, // 简化处理
+      // 双人模式下rank 2即败者得0分；多人模式走rank计算，不使用score
+      score: p.rank === 1 ? 1 : 0,
     }));
 
     const updates = this.eloCalculator.calculateRatingUpdates(eloPlayers);
@@ -572,6 +573,7 @@ export class LeaderboardService {
           startDate: new Date('2024-01-01'),
           endDate: new Date('2099-12-31'),
           isActive: true,
+          createdAt: new Date('2024-01-01'),
         },
       ];
     }
@@ -624,6 +626,7 @@ export class LeaderboardService {
       startDate,
       endDate,
       isActive: true,
+      createdAt: new Date(),
     };
 
     const pipeline = this.redis.pipeline();

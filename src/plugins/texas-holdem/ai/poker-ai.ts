@@ -361,7 +361,8 @@ export class PokerAI {
     const playerSeat = player.seatIndex;
 
     // 计算距离（考虑环形）
-    let distance = (playerSeat - dealerSeat + this.maxPlayers) % this.maxPlayers;
+    const maxPlayers = state.players.length;
+    let distance = (playerSeat - dealerSeat + maxPlayers) % maxPlayers;
     const ratio = distance / playerCount;
 
     if (ratio < 0.33) return 'early';

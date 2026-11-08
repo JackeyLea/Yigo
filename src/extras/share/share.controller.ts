@@ -10,24 +10,20 @@ import {
   HttpStatus,
   ParseIntPipe,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-  ApiParam,
-  ApiQuery,
-} from '@nestjs/swagger';
 import { ShareService, ShareData } from './share.service';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  CurrentUser,
+  CurrentUserData,
+} from '../../common/decorators/current-user.decorator';
 
 class GenerateShareCardDto {
   type!: string;
   data!: Record<string, any>;
 }
 
-@ApiTags('Share - 分享功能')
-@Controller('api/v1/share')
+// 注：@nestjs/swagger 未在 package.json 中声明，相关装饰器已移除
+@Controller('share')
 export class ShareController {
   constructor(private readonly shareService: ShareService) {}
 
@@ -36,15 +32,13 @@ export class ShareController {
    */
   @Post('card')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '生成分享卡片', description: '生成指定类型的分享卡片图片URL' })
   async generateShareCard(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Body() dto: GenerateShareCardDto,
   ) {
     const imageUrl = await this.shareService.generateShareCard(
-      userId,
+      user.userId,
       dto.type,
       dto.data,
     );
@@ -59,16 +53,13 @@ export class ShareController {
    */
   @Post('game-result/:recordId')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '分享游戏战绩', description: '分享指定游戏记录的战绩卡片' })
-  @ApiParam({ name: 'recordId', description: '游戏记录ID', example: 1 })
   async shareGameResult(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Param('recordId', ParseIntPipe) recordId: number,
   ) {
     const shareData: ShareData = await this.shareService.shareGameResult(
-      userId,
+      user.userId,
       recordId,
     );
     return {
@@ -82,16 +73,13 @@ export class ShareController {
    */
   @Post('room-invite/:roomId')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '分享房间邀请', description: '生成房间邀请分享卡片' })
-  @ApiParam({ name: 'roomId', description: '房间ID', example: 'room-abc123' })
   async shareRoomInvite(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Param('roomId') roomId: string,
   ) {
     const shareData: ShareData = await this.shareService.shareRoomInvite(
-      userId,
+      user.userId,
       roomId,
     );
     return {
@@ -105,17 +93,14 @@ export class ShareController {
    */
   @Post('achievement/:achievementId')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '分享成就', description: '分享成就解锁卡片' })
-  @ApiParam({ name: 'achievementId', description: '成就ID', example: 'first_win' })
   async shareAchievement(
-    @CurrentUser('id') userId: number,
+    @CurrentUser() user: CurrentUserData,
     @Param('achievementId') achievementId: string,
     @Query('name') achievementName: string,
   ) {
     const shareData: ShareData = await this.shareService.shareAchievement(
-      userId,
+      user.userId,
       achievementId,
       achievementName,
     );
@@ -130,11 +115,9 @@ export class ShareController {
    */
   @Post('profile')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '分享个人主页', description: '生成个人主页分享卡片' })
-  async shareProfile(@CurrentUser('id') userId: number) {
-    const shareData: ShareData = await this.shareService.shareProfile(userId);
+  async shareProfile(@CurrentUser() user: CurrentUserData) {
+    const shareData: ShareData = await this.shareService.shareProfile(user.userId);
     return {
       success: true,
       data: shareData,
@@ -146,8 +129,6 @@ export class ShareController {
    */
   @Post('track/:shareId')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '追踪分享点击', description: '记录分享链接的点击次数' })
-  @ApiParam({ name: 'shareId', description: '分享ID', example: 'abc123' })
   async trackShare(@Param('shareId') shareId: string) {
     await this.shareService.trackShare(shareId);
     return {
@@ -160,8 +141,6 @@ export class ShareController {
    * 获取分享记录详情（公开接口）
    */
   @Get('record/:shareId')
-  @ApiOperation({ summary: '获取分享详情', description: '获取分享记录的详细信息' })
-  @ApiParam({ name: 'shareId', description: '分享ID', example: 'abc123' })
   async getShareRecord(@Param('shareId') shareId: string) {
     const record = await this.shareService.getShareRecord(shareId);
     return {

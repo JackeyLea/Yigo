@@ -14,8 +14,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { MatchEngineService, QueuedPlayer, MatchedPlayer, MatchCriteria } from './match-engine.service';
 import { RoomService } from '../room/room.service';
-import { AiService } from '../ai/ai.service';
-import { PluginService } from '../plugin/plugin.service';
 import { UserService } from '../user/user.service';
 import { EventBus } from '../plugin/event-bus';
 import { LeaderboardEntry } from '../common/entities/leaderboard-entry.entity';
@@ -98,8 +96,6 @@ export class MatchQueueService {
     private readonly configService: ConfigService,
     private readonly matchEngine: MatchEngineService,
     private readonly roomService: RoomService,
-    private readonly aiService: AiService,
-    private readonly pluginService: PluginService,
     private readonly userService: UserService,
     private readonly schedulerRegistry: SchedulerRegistry,
     @InjectRepository(LeaderboardEntry)
@@ -260,7 +256,7 @@ export class MatchQueueService {
     const criteria: MatchCriteria = JSON.parse(ticketData.criteria || '{}');
 
     // 估算等待时间
-    const estimatedWait = this.estimateWaitTime(
+    const estimatedWait = await this.estimateWaitTime(
       Number(ticketData.rating),
       ticketData.pluginId,
       criteria,
@@ -807,7 +803,7 @@ export class MatchQueueService {
       ticketId,
       status,
       elapsedTime,
-      estimatedWait: this.estimateWaitTime(
+      estimatedWait: await this.estimateWaitTime(
         Number(ticketData.rating),
         ticketData.pluginId,
         criteria,

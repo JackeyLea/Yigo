@@ -67,6 +67,7 @@ describe('LeaderboardService', () => {
     set: jest.fn().mockReturnThis(),
     pexpire: jest.fn().mockReturnThis(),
     expire: jest.fn().mockReturnThis(),
+    lpush: jest.fn().mockReturnThis(),
     exec: jest.fn().mockResolvedValue([]),
   };
 
@@ -344,7 +345,12 @@ describe('LeaderboardService', () => {
         currentRating: '1600',
         totalPlayTime: '3600',
       });
-      redisMock.get.mockResolvedValue('1800');
+      // getUserStatsFromRedis 通过两个不同key调用get: highest(最高评分)和streak(当前连胜)
+      redisMock.get.mockImplementation(async (key: string) => {
+        if (key.includes(':highest:')) return '1800';
+        if (key.includes(':streak:')) return '3';
+        return null;
+      });
 
       leaderboardRepoMock.findOne.mockResolvedValue({
         games_drawn: 10,

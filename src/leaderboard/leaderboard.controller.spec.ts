@@ -54,6 +54,7 @@ describe('LeaderboardController', () => {
     startDate: new Date('2024-01-01'),
     endDate: new Date('2024-12-31'),
     isActive: true,
+    createdAt: new Date(),
   };
 
   beforeEach(async () => {
@@ -134,7 +135,7 @@ describe('LeaderboardController', () => {
       expect(leaderboardService.getLeaderboard).toHaveBeenCalledWith(
         'chess', 'all_time', 'global', 'all_time', 1, 50,
       );
-      expect(result.items[0].gameType).toBeUndefined(); // service返回的数据结构
+      expect('gameType' in result.items[0]).toBe(false); // service返回的数据结构不含gameType
     });
 
     it('pageSize不应超过100', async () => {
@@ -144,7 +145,7 @@ describe('LeaderboardController', () => {
 
       // 控制器应将pageSize限制为100
       expect(leaderboardService.getLeaderboard).toHaveBeenCalledWith(
-        'chess', 'all_time', 'global', 'all_time', 1, 200,
+        'chess', 'all_time', 'global', 'all_time', 1, 100,
       );
     });
   });

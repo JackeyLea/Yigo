@@ -4,7 +4,6 @@
  * Tests for settings validation, management, and schema.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import {
   GoSettingsManager,
   DEFAULT_GO_SETTINGS,

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import { StateSyncService } from './state-sync.service';
 import { BoardSyncStrategy } from './strategies/board-sync.strategy';
 import { CardSyncStrategy } from './strategies/card-sync.strategy';
