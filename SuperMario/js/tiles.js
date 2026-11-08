@@ -15,9 +15,9 @@ function mtA(id, col, row) { MT_ART[id] = [col, row]; }
 
 // ===== 调色板0 =====
 mtA(0x01, -2, -2);                     // 黑块(用程序绘制)
-mtA(0x02, 5, 12); mtA(0x03, 6, 12); mtA(0x04, 7, 12); // 灌木 左/中/右
-mtA(0x05, 8, 16); mtA(0x06, 9, 16); mtA(0x07, 10, 16); // 山丘左/左下中/中顶
-mtA(0x08, 8, 18); mtA(0x09, 9, 18); mtA(0x0a, 10, 18); // 山丘右/右下/中下
+mtA(0x02, 0, 7); mtA(0x03, 1, 7); mtA(0x04, 2, 7); // 灌木 左/中/右
+mtA(0x05, 0, 6); mtA(0x06, 1, 6); mtA(0x07, 2, 6); // 山丘左/左下中/中顶
+mtA(0x08, 0, 8); mtA(0x09, 1, 8); mtA(0x0a, 2, 8); // 山丘右/右下/中下
 mtA(0x0b, 2, 16);                      // 桥栏杆
 mtA(0x0c, 6, 16);                      // 锁链
 mtA(0x0d, 5, 16); mtA(0x0e, 6, 16); mtA(0x0f, 7, 16); // 树顶(高/矮/高下半)
@@ -64,22 +64,22 @@ mtA(0x6b, 5, 8); mtA(0x6c, 5, 10);     // 水管(水关横管)
 mtA(0x6d, -3, -3);                     // 旗球(残留)
 
 // ===== 调色板2 =====
-mtA(0x80, 0, 18); mtA(0x81, 1, 18); mtA(0x82, 2, 18);            // 云 左/中/右
-mtA(0x83, 0, 20); mtA(0x84, 1, 20); mtA(0x85, 2, 20);            // 云底 左/中/右
+mtA(0x80, 4, 4); mtA(0x81, 5, 4); mtA(0x82, 6, 4);            // 云 左/中/右
+mtA(0x83, 4, 5); mtA(0x84, 5, 5); mtA(0x85, 6, 5);            // 云底 左/中/右
 mtA(0x86, 0, 16);                       // 水面波
 mtA(0x87, 1, 16);                       // 水
 mtA(0x88, 2, 2);                        // 云台块(云关地形)
 mtA(0x89, 3, 16);                       // Boss桥
 
 // ===== 调色板3 =====
-mtA(0xc0, 0, 2); mtA(0xc1, 0, 2);      // ?块(金币/道具) — 动画帧渲染时替换
-mtA(0xc2, 0, 4); mtA(0xc3, 0, 4);      // 金币(水关金币同帧)
+mtA(0xc0, 30, 1); mtA(0xc1, 30, 1);      // ?块(金币/道具) — 动画帧渲染时替换
+mtA(0xc2, 30, 2); mtA(0xc3, 30, 2);      // 金币(水关金币同帧)
 mtA(0xc4, 3, 0);                       // 用过的块
 mtA(0xc5, 16, 4);                      // 斧头
 
 // ?块/金币动画帧
-var Q_FRAMES = [[0, 2], [1, 2], [2, 2], [3, 2]];
-var COIN_FRAMES = [[0, 4], [1, 4], [2, 4], [3, 4]];
+var Q_FRAMES = [[30, 1], [30, 3], [30, 5], [30, 7]];
+var COIN_FRAMES = [[30, 2], [30, 4], [30, 6], [30, 8]];
 
 // 程序绘制瓦片(负坐标标记): 旗杆球/杆, 绳, 黑块, 弹簧占位
 var PROC_TILES = {};
@@ -151,8 +151,12 @@ function drawMetatile(ctx, tilesImg, mt, dx, dy, frameOverride, artMap) {
 
 // ---- 实心判定(原版按高2位+下界) ----
 var BLOCK_LOW_BOUNDS = [0x10, 0x51, 0x88, 0xc0];
+// 旗杆球/杆: 原版 HandleClimbing 只在中心 4px 窄带判定为可抓握, 杆身不阻挡移动
+// (smbdis.asm "makes actual physical part of vine or flagpole thinner than 16 pixels")
+// 若按实心处理, 玩家会被挡在杆前, checkFlagpole 的接近判定永远触发不了
+var CLIMB_METATILES = { 0x24: true, 0x25: true, 0x6d: true };
 function isSolidMetatile(m) {
-  if (m === 0) return false;
+  if (m === 0 || CLIMB_METATILES[m]) return false;
   var cat = (m & 0xc0) >> 6;
   return m >= BLOCK_LOW_BOUNDS[cat];
 }

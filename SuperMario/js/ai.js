@@ -168,40 +168,56 @@ AIBot.prototype.handlePlaying = function (inp) {
 
   // === 决策 ===
 
-  // 旗杆接近 — 直冲
+  // 旗杆接近: 杆身虽不再阻挡, 但杆底的基座是实心瓦片, 平地跑会被顶在杆前几像素,
+  // checkFlagpole 的 p.x+12>=fx 永远差一点触发不了 —— 原版同样是跳起来抓杆
   if (flagDist !== null && flagDist < 120) {
     inp.right = true;
     inp.run = true;
+    var canGrabJump = this.jumpCooldown === 0 || this.stuckTimer > 30;
+    if (p.onGround && flagDist <= 48 && canGrabJump) {
+      inp.jump = true;
+      this.jumpHoldFrames = 28;
+      this.jumpCooldown = 30;
+      this.stuckTimer = 0;
+      this.log("跳: 抓旗杆 dist=" + flagDist);
+    } else if (!p.onGround && this.jumpHoldFrames > 0) {
+      inp.jump = true;
+      this.jumpHoldFrames--;
+    }
     return;
   }
 
   // 跳跃决策
   var needJump = false;
-  var jumpHeight = 12; // 默认跳跃高度（帧数）
+  var jumpHeight = 16; // 默认跳跃高度（帧数）
 
   if (wallAhead.blocked && p.onGround && this.jumpCooldown === 0) {
     // 高障碍需要更早跳跃（距离 3-4 格时就开始）
     if (wallAhead.tall) {
       if (wallAhead.dist <= 4) {
         needJump = true;
-        jumpHeight = 18;
+        jumpHeight = 20;
         this.log("跳: 高障碍 dist=" + wallAhead.dist + " h=" + wallAhead.height);
       }
     } else {
       // 普通障碍距离 1-2 格时跳
       if (wallAhead.dist <= 2) {
         needJump = true;
+        jumpHeight = 24;
         this.log("跳: 墙壁 dist=" + wallAhead.dist);
       }
     }
   }
 
-  if (gapInfo.hasGap && p.onGround && this.jumpCooldown === 0) {
-    needJump = true;
-    this.log("跳: 坑洞(" + gapInfo.gapWidth + "宽)");
-    if (gapInfo.gapWidth >= 3) {
+  if (gapInfo.hasGap) {
+    // 贴边起跳不受冷却阻塞: 冷却期正好走到坑边时若不跳就直接掉下去
+    var gd = gapInfo.gapDist;
+    if (p.onGround && gd <= 1 && (this.jumpCooldown === 0 || gd === 1)) {
+      needJump = true;
+      // 必须满跳: 松开 A 会立即切换到高重力, 半跳落点在坑内
+      jumpHeight = gapInfo.gapWidth >= 4 ? 34 : 30;
       inp.run = true;
-      jumpHeight = 16; // 大坑需要更高跳
+      this.log("跳: 坑(" + gapInfo.gapWidth + "宽) dist=" + gd);
     }
   }
 
@@ -213,6 +229,7 @@ AIBot.prototype.handlePlaying = function (inp) {
 
   if (threat.needJump && p.onGround && this.jumpCooldown === 0) {
     needJump = true;
+    jumpHeight = 20;
     this.log("跳: 躲避" + threat.kind);
   }
 
@@ -309,36 +326,44 @@ AIBot.prototype.checkWall = function (p, L, playerCol, topRow, botRow) {
   return result;
 };
 
-// 检测前方坑洞
+// 某列从 fromRow 向下是否存在可落脚的地形
+AIBot.prototype.hasGroundBelow = function (L, col, fromRow) {
+  for (var r = Math.max(0, fromRow); r < LEVEL_ROWS; r++) {
+    var mt = L.at(col, r);
+    if (isSolidMetatile(mt) && mt !== 0x5f && mt !== 0x60) return true;
+  }
+  return false;
+};
+
+// 检测前方坑洞: 只有整列(从脚下到屏幕底)都无地形才算真坑
+// 旧版只看脚下两行, 站在水管/砖块顶时会把相邻低地误判成大坑导致提前起跳
 AIBot.prototype.checkGap = function (L, playerCol, feetRow, feetY) {
-  var result = { hasGap: false, gapWidth: 0, falling: false };
+  var result = { hasGap: false, gapWidth: 0, gapDist: 99, falling: false };
 
   if (feetRow >= LEVEL_ROWS) {
     result.falling = true;
     result.hasGap = true;
+    result.gapDist = 0;
     return result;
   }
 
-  var groundRow = feetRow;
+  var startRow = feetRow;
+  var gapStart = -1;
   var gapWidth = 0;
-  for (var d = 1; d <= 6; d++) {
+
+  for (var d = 1; d <= 10; d++) {
     var col = playerCol + d;
     if (col < 0 || col >= L.width) break;
-    var mt = L.at(col, groundRow);
-    var isGround = isSolidMetatile(mt) && mt !== 0x5f && mt !== 0x60;
-    if (!isGround) {
-      var mt2 = L.at(col, groundRow + 1);
-      var isLower = isSolidMetatile(mt2) && mt2 !== 0x5f && mt2 !== 0x60;
-      if (!isLower) {
-        gapWidth++;
-      } else {
-        break;
-      }
+    if (this.hasGroundBelow(L, col, startRow)) {
+      if (gapStart !== -1) break; // 坑的对岸
     } else {
-      break;
+      if (gapStart === -1) gapStart = d;
+      gapWidth++;
     }
   }
+
   result.gapWidth = gapWidth;
+  result.gapDist = gapStart === -1 ? 99 : gapStart;
   result.hasGap = gapWidth >= 2;
   return result;
 };
@@ -406,8 +431,17 @@ AIBot.prototype.analyzeThreats = function (p, enemies, particles) {
 
     if (kind === "goomba" || kind === "koopa" || kind === "koopaRed" ||
         kind === "buzzy" || kind === "koopaFlyV" || kind === "koopaFlyH" ||
-        kind === "hammerBro" || kind === "koopaJump" || kind === "lakitu") {
-      if (dx > 0 && dx < 32 && Math.abs(dy) < 16) {
+        kind === "koopaJump" || kind === "lakitu") {
+      // 贴身才跳: 太早起跳会在上升段撞到敌人侧面而死, 近处跳才能在下落段踩到它
+      if (dx > 4 && dx < 20 && Math.abs(dy) < 20) {
+        result.needJump = true;
+        result.kind = kind;
+        return result;
+      }
+    }
+
+    if (kind === "hammerBro") {
+      if (dx > 4 && dx < 24 && Math.abs(dy) < 20) {
         result.needJump = true;
         result.kind = kind;
         return result;

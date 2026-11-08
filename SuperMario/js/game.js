@@ -1156,7 +1156,9 @@ Game.prototype.render = function () {
         var t = 16 - bounce.timer;
         dy = -Math.round(Math.sin(Math.PI * t / 16) * 8);
       }
-      drawMetatile(ctx, this.images.tiles, mt, sc * 16 - subX, row * 16 + 32 + dy, art, this.ds.art);
+      var tileX = sc * 16 - subX;
+      var tileY = row * 16 + 32 + dy;
+      drawMetatile(ctx, this.images.tiles, mt, tileX, tileY, art, this.ds.art);
     }
   }
 
@@ -1170,7 +1172,7 @@ Game.prototype.render = function () {
   for (var i = 0; i < this.particles.length; i++) this.particles[i].draw(ctx, this.scrollX);
 
   // 旗(杆旗)
-  if (L.flagpole) this.drawPoleFlag(ctx);
+  if (L.flagpole && this.state >= ST.FLAG) this.drawPoleFlag(ctx);
   if (L.starflagX >= 0 && (this.state === ST.TIMECOUNT || this.state === ST.LEVEL_END || this.state === ST.CASTLE_WALK)) {
     this.drawCastleFlag(ctx);
   }
@@ -1258,6 +1260,8 @@ Game.prototype.drawPlayer = function (ctx) {
 Game.prototype.drawPoleFlag = function (ctx) {
   var L = this.level;
   var x = L.flagpole.x - this.scrollX;
+  // 屏幕范围检查
+  if (x < -20 || x > 276) return;
   var y = this.state >= ST.FLAG ? Math.min(this.flagY || 56, 168) : 56;
   // 绿旗(16x16)
   ctx.fillStyle = "#00a800";
@@ -1273,6 +1277,8 @@ Game.prototype.drawCastleFlag = function (ctx) {
   var L = this.level;
   if (L.starflagX < 0) return;
   var x = L.starflagX - this.scrollX + 8;
+  // 屏幕范围检查
+  if (x < -20 || x > 276) return;
   var targetY = 96;
   if (this.castleFlagY === undefined) this.castleFlagY = 176;
   if (this.state === ST.TIMECOUNT) {
